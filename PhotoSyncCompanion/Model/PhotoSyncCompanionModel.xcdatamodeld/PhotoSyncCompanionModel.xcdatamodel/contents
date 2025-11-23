@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23234" systemVersion="24B90" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="LocalAsset" representedClassName="LocalAsset" syncable="YES" codeGenerationType="none">
+        <attribute name="localIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="creationDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modificationDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="mediaTypeRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="mediaSubtypesRaw" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="duration" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="pixelWidth" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="pixelHeight" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="isFavorite" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="hasAdjustments" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="hidden" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="burstIdentifier" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="cloudIdentifier" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="masterFingerprint" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="variantFingerprint" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="timezoneOffsetSeconds" optional="YES" attributeType="Integer 32" usesScalarValueType="NO"/>
+        <attribute name="sourceTypeRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="localAddedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="localIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <elements>
+        <element name="LocalAsset" positionX="160" positionY="160" width="128" height="210"/>
+    </elements>
+</model>

@@ -20,6 +20,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Your photos are required so PhotoSync Companion can identify items missing from Amazon Photos.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

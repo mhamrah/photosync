@@ -7,10 +7,16 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    6B7721CA2B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld in Resources */ = {isa = PBXBuildFile; fileRef = 6B7721C92B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld */; };
     6B7721B62B6F0C5E00B16B7D /* PhotoSyncCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721B22B6F0C5E00B16B7D /* PhotoSyncCompanionApp.swift */; };
     6B7721B72B6F0C5E00B16B7D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721B32B6F0C5E00B16B7D /* ContentView.swift */; };
     6B7721B82B6F0C5E00B16B7D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B7721B42B6F0C5E00B16B7D /* Assets.xcassets */; };
     6B7721B92B6F0C5E00B16B7D /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B7721B52B6F0C5E00B16B7D /* Preview Assets.xcassets */; };
+    6B7721C62B6F117500B16B7D /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721C52B6F117500B16B7D /* PersistenceController.swift */; };
+    6B7721CE2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721CB2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift */; };
+    6B7721CF2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721CC2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift */; };
+    6B7721D22B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721D12B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift */; };
+    6B7721D62B6F2C5400B16B7D /* PhotoLibraryIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +26,13 @@
     6B7721B42B6F0C5E00B16B7D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
     6B7721B52B6F0C5E00B16B7D /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
     6B7721B82B6F0C5E00B16B7E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    6B7721C52B6F117500B16B7D /* PersistenceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistenceController.swift; sourceTree = "<group>"; };
+    6B7721CB2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalAsset+CoreDataClass.swift"; sourceTree = "<group>"; };
+    6B7721CC2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalAsset+CoreDataProperties.swift"; sourceTree = "<group>"; };
+    6B7721D12B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryAuthorizationController.swift; sourceTree = "<group>"; };
+    6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryIndexer.swift; sourceTree = "<group>"; };
+    6B7721C82B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = PhotoSyncCompanionModel.xcdatamodel; sourceTree = "<group>"; };
+    6B7721D02B6F117500B16B7D /* PhotoSyncCompanion.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PhotoSyncCompanion.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,11 +67,42 @@
       children = (
         6B7721B22B6F0C5E00B16B7D /* PhotoSyncCompanionApp.swift */,
         6B7721B32B6F0C5E00B16B7D /* ContentView.swift */,
+        6B7721C42B6F117500B16B7D /* Persistence */,
+        6B7721C72B6F117500B16B7D /* Model */,
+        6B7721D32B6F117500B16B7D /* Services */,
         6B7721B42B6F0C5E00B16B7D /* Assets.xcassets */,
         6B7721B72B6F0C5E00B16B7E /* Preview Content */,
         6B7721B82B6F0C5E00B16B7E /* Info.plist */,
+        6B7721D02B6F117500B16B7D /* PhotoSyncCompanion.entitlements */,
       );
       path = PhotoSyncCompanion;
+      sourceTree = "<group>";
+    };
+    6B7721C42B6F117500B16B7D /* Persistence */ = {
+      isa = PBXGroup;
+      children = (
+        6B7721C52B6F117500B16B7D /* PersistenceController.swift */,
+      );
+      path = Persistence;
+      sourceTree = "<group>";
+    };
+    6B7721C72B6F117500B16B7D /* Model */ = {
+      isa = PBXGroup;
+      children = (
+        6B7721C92B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld */,
+        6B7721CB2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift */,
+        6B7721CC2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift */,
+      );
+      path = Model;
+      sourceTree = "<group>";
+    };
+    6B7721D32B6F117500B16B7D /* Services */ = {
+      isa = PBXGroup;
+      children = (
+        6B7721D12B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift */,
+        6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */,
+      );
+      path = Services;
       sourceTree = "<group>";
     };
     6B7721B72B6F0C5E00B16B7E /* Preview Content */ = {
@@ -129,6 +173,7 @@
       files = (
         6B7721B82B6F0C5E00B16B7D /* Assets.xcassets in Resources */,
         6B7721B92B6F0C5E00B16B7D /* Preview Assets.xcassets in Resources */,
+        6B7721CA2B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld in Resources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
@@ -141,10 +186,28 @@
       files = (
         6B7721B62B6F0C5E00B16B7D /* PhotoSyncCompanionApp.swift in Sources */,
         6B7721B72B6F0C5E00B16B7D /* ContentView.swift in Sources */,
+        6B7721C62B6F117500B16B7D /* PersistenceController.swift in Sources */,
+        6B7721CE2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift in Sources */,
+        6B7721CF2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift in Sources */,
+        6B7721D22B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift in Sources */,
+        6B7721D62B6F2C5400B16B7D /* PhotoLibraryIndexer.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCVersionGroup section */
+    6B7721C92B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld */ = {
+      isa = XCVersionGroup;
+      children = (
+        6B7721C82B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodel */ ,
+      );
+      currentVersion = 6B7721C82B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodel */;
+      path = PhotoSyncCompanionModel.xcdatamodeld;
+      sourceTree = "<group>";
+      versionGroupType = wrapper.xcdatamodel;
+    };
+/* End XCVersionGroup section */
 
 /* Begin XCBuildConfiguration section */
     6B7721BE2B6F0C5E00B16B7E /* Debug */ = {
@@ -152,6 +215,7 @@
       buildSettings = {
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = PhotoSyncCompanion/PhotoSyncCompanion.entitlements;
         CODE_SIGN_STYLE = Automatic;
         COMBINE_HIDPI_IMAGES = YES;
         CURRENT_PROJECT_VERSION = 1;
@@ -175,6 +239,7 @@
       buildSettings = {
         ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = PhotoSyncCompanion/PhotoSyncCompanion.entitlements;
         CODE_SIGN_STYLE = Automatic;
         COMBINE_HIDPI_IMAGES = YES;
         CURRENT_PROJECT_VERSION = 1;
