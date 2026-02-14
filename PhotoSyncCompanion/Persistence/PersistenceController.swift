@@ -21,6 +21,14 @@ final class PersistenceController {
             asset.pixelHeight = 3024
             asset.hasAdjustments = false
             asset.sourceTypeRaw = 1
+            asset.analysisStatus = .success
+            asset.analysisUpdatedAt = Date()
+            if index < 2 {
+                // Seed one duplicate group for UI previews.
+                asset.contentHash = "preview-duplicate-hash-a"
+            } else {
+                asset.contentHash = "preview-unique-hash-\(index)"
+            }
         }
 
         do {
