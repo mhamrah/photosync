@@ -19,6 +19,16 @@
         <attribute name="timezoneOffsetSeconds" optional="YES" attributeType="Integer 32" usesScalarValueType="NO"/>
         <attribute name="sourceTypeRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="localAddedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="contentHash" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="perceptualHash" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="featureVector" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES" usesScalarValueType="NO"/>
+        <attribute name="featureVersion" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="analysisUpdatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="analysisStatusRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" indexed="YES" usesScalarValueType="YES"/>
+        <attribute name="analysisErrorMessage" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="analysisAttemptCount" optional="NO" attributeType="Integer 16" defaultValueString="0" indexed="YES" usesScalarValueType="YES"/>
+        <attribute name="analysisNextRetryAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="keepPreferred" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
         <uniquenessConstraints>
             <constraint>
                 <constraintValue key="constraintValue" stringValue="localIdentifier"/>
@@ -26,6 +36,6 @@
         </uniquenessConstraints>
     </entity>
     <elements>
-        <element name="LocalAsset" positionX="160" positionY="160" width="128" height="210"/>
+        <element name="LocalAsset" positionX="160" positionY="160" width="128" height="345"/>
     </elements>
 </model>

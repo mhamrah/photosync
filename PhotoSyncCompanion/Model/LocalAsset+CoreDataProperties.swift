@@ -23,12 +23,33 @@ extension LocalAsset {
     @NSManaged public var timezoneOffsetSeconds: NSNumber?
     @NSManaged public var sourceTypeRaw: Int16
     @NSManaged public var localAddedDate: Date?
+    @NSManaged public var contentHash: String?
+    @NSManaged public var perceptualHash: String?
+    @NSManaged public var featureVector: Data?
+    @NSManaged public var featureVersion: String?
+    @NSManaged public var analysisUpdatedAt: Date?
+    @NSManaged public var analysisStatusRaw: Int16
+    @NSManaged public var analysisErrorMessage: String?
+    @NSManaged public var analysisAttemptCount: Int16
+    @NSManaged public var analysisNextRetryAt: Date?
+    @NSManaged public var keepPreferred: Bool
 }
 
 extension LocalAsset {
+    public enum AnalysisStatus: Int16, Sendable {
+        case pending = 0
+        case success = 1
+        case failed = 2
+    }
+
     public var timezoneOffsetSecondsValue: Int? {
         get { timezoneOffsetSeconds?.intValue }
         set { timezoneOffsetSeconds = newValue.map { NSNumber(value: $0) } }
+    }
+
+    public var analysisStatus: AnalysisStatus {
+        get { AnalysisStatus(rawValue: analysisStatusRaw) ?? .pending }
+        set { analysisStatusRaw = newValue.rawValue }
     }
 }
 

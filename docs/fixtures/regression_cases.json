@@ -1,0 +1,40 @@
+{
+  "cases": [
+    {
+      "id": "rotated_copy",
+      "description": "Same image content with EXIF orientation changes",
+      "expected": {
+        "exact_duplicate": false,
+        "near_duplicate": true,
+        "semantic_similarity": "high"
+      }
+    },
+    {
+      "id": "edited_variant",
+      "description": "Color and exposure edits applied to the same source image",
+      "expected": {
+        "exact_duplicate": false,
+        "near_duplicate": true,
+        "semantic_similarity": "high"
+      }
+    },
+    {
+      "id": "burst_frame_neighbors",
+      "description": "Adjacent burst frames of the same scene",
+      "expected": {
+        "exact_duplicate": false,
+        "near_duplicate": true,
+        "semantic_similarity": "high"
+      }
+    },
+    {
+      "id": "low_resolution_copy",
+      "description": "Downscaled copy of the same source image",
+      "expected": {
+        "exact_duplicate": false,
+        "near_duplicate": true,
+        "semantic_similarity": "medium_or_high"
+      }
+    }
+  ]
+}
