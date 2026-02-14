@@ -72,20 +72,10 @@ final class PhotoLibraryIndexer: ObservableObject {
         do {
             try Task.checkCancellation()
 
-            let fetchOptions = makeFetchOptions()
-            let fetchResult = PHAsset.fetchAssets(with: fetchOptions)
-            let total = fetchResult.count
+            let total = PHAsset.fetchAssets(with: makeFetchOptions()).count
 
             await MainActor.run {
                 self.state = .indexing(.init(processed: 0, total: total))
-            }
-
-            if total == 0 {
-                await MainActor.run {
-                    self.state = .completed(.init(processed: 0, total: 0, completedAt: Date()))
-                    self.indexingTask = nil
-                }
-                return
             }
 
             let backgroundContext = persistenceController.container.newBackgroundContext()
@@ -93,12 +83,18 @@ final class PhotoLibraryIndexer: ObservableObject {
             backgroundContext.automaticallyMergesChangesFromParent = false
 
             var processed = 0
+            var lastIdentifier: String?
 
-            for start in stride(from: 0, to: total, by: batchSize) {
+            while true {
                 try Task.checkCancellation()
 
-                let end = min(start + batchSize, total)
-                let identifiers = (start..<end).map { fetchResult.object(at: $0).localIdentifier }
+                let fetchResult = fetchAssetsPage(after: lastIdentifier, limit: batchSize)
+                let pageCount = fetchResult.count
+                guard pageCount > 0 else { break }
+
+                let assets = (0..<pageCount).map { fetchResult.object(at: $0) }
+                lastIdentifier = assets.last?.localIdentifier
+                let identifiers = assets.map(\.localIdentifier)
 
                 try await backgroundContext.perform {
                     let fetchRequest: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
@@ -108,8 +104,7 @@ final class PhotoLibraryIndexer: ObservableObject {
                     let existing = try backgroundContext.fetch(fetchRequest)
                     var existingByIdentifier = Dictionary(uniqueKeysWithValues: existing.map { ($0.localIdentifier, $0) })
 
-                    for index in start..<end {
-                        let asset = fetchResult.object(at: index)
+                    for asset in assets {
                         let localAsset = existingByIdentifier[asset.localIdentifier] ?? LocalAsset(context: backgroundContext)
                         self.update(localAsset, with: asset)
                         existingByIdentifier[asset.localIdentifier] = localAsset
@@ -121,15 +116,15 @@ final class PhotoLibraryIndexer: ObservableObject {
                     }
                 }
 
-                processed = end
+                processed += pageCount
 
                 await MainActor.run {
-                    self.state = .indexing(.init(processed: processed, total: total))
+                    self.state = .indexing(.init(processed: processed, total: max(total, processed)))
                 }
             }
 
             await MainActor.run {
-                self.state = .completed(.init(processed: processed, total: total, completedAt: Date()))
+                self.state = .completed(.init(processed: processed, total: max(total, processed), completedAt: Date()))
                 self.indexingTask = nil
             }
         } catch is CancellationError {
@@ -147,10 +142,18 @@ final class PhotoLibraryIndexer: ObservableObject {
 
     private func makeFetchOptions() -> PHFetchOptions {
         let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        options.sortDescriptors = [NSSortDescriptor(key: "localIdentifier", ascending: true)]
         options.includeHiddenAssets = true
-        options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared]
         return options
+    }
+
+    private func fetchAssetsPage(after lastIdentifier: String?, limit: Int) -> PHFetchResult<PHAsset> {
+        let options = makeFetchOptions()
+        options.fetchLimit = limit
+        if let lastIdentifier {
+            options.predicate = NSPredicate(format: "localIdentifier > %@", lastIdentifier)
+        }
+        return PHAsset.fetchAssets(with: options)
     }
 
     private nonisolated func update(_ localAsset: LocalAsset, with asset: PHAsset) {

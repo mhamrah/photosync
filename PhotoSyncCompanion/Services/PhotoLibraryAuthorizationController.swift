@@ -3,6 +3,11 @@ import Photos
 
 @MainActor
 final class PhotoLibraryAuthorizationController: ObservableObject {
+    enum AuthorizationRequestTrigger {
+        case automatic
+        case userInitiated
+    }
+
     enum AuthorizationState: Equatable {
         case notDetermined
         case requesting
@@ -40,7 +45,9 @@ final class PhotoLibraryAuthorizationController: ObservableObject {
 
         var title: String {
             switch self {
-            case .notDetermined, .requesting:
+            case .notDetermined:
+                return "Photo Library Access Needed"
+            case .requesting:
                 return "Requesting Photo Library Access"
             case .authorized:
                 return "Access Granted"
@@ -57,7 +64,9 @@ final class PhotoLibraryAuthorizationController: ObservableObject {
 
         var message: String {
             switch self {
-            case .notDetermined, .requesting:
+            case .notDetermined:
+                return "PhotoSync Companion needs permission to read your Apple Photos library so it can compare with Amazon Photos. Select Allow Access to continue."
+            case .requesting:
                 return "PhotoSync Companion needs permission to read your Apple Photos library so it can compare with Amazon Photos."
             case .authorized:
                 return "Photo library access is available."
@@ -82,21 +91,42 @@ final class PhotoLibraryAuthorizationController: ObservableObject {
         }
     }
 
-    @Published private(set) var state: AuthorizationState
+    private static let hasAttemptedAutomaticPromptKey = "PhotoSyncCompanion.hasAttemptedPhotoAccessPrompt"
 
-    init(initialStatus: PHAuthorizationStatus? = nil) {
+    @Published private(set) var state: AuthorizationState
+    private var isRequestInFlight = false
+    private let userDefaults: UserDefaults
+
+    init(initialStatus: PHAuthorizationStatus? = nil, userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
         let status = initialStatus ?? PHPhotoLibrary.authorizationStatus(for: .readWrite)
         state = AuthorizationState(status: status)
     }
 
-    func requestAuthorizationIfNeeded() async {
+    func requestAuthorizationIfNeeded(trigger: AuthorizationRequestTrigger = .automatic) async {
         let currentStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard currentStatus == .notDetermined else {
             state = AuthorizationState(status: currentStatus)
             return
         }
 
+        if isRequestInFlight {
+            return
+        }
+
+        if trigger == .automatic,
+           userDefaults.bool(forKey: Self.hasAttemptedAutomaticPromptKey) {
+            state = .notDetermined
+            return
+        }
+
+        if trigger == .automatic {
+            userDefaults.set(true, forKey: Self.hasAttemptedAutomaticPromptKey)
+        }
+
         state = .requesting
+        isRequestInFlight = true
+        defer { isRequestInFlight = false }
 
         let newStatus = await withCheckedContinuation { continuation in
             PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in

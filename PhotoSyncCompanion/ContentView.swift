@@ -64,12 +64,17 @@ struct ContentView: View {
 
             AuthorizationOverlayView(
                 state: photoAuthorizationController.state,
-                openSettings: photoAuthorizationController.openPrivacySettings
+                openSettings: photoAuthorizationController.openPrivacySettings,
+                requestAccess: {
+                    Task {
+                        await photoAuthorizationController.requestAuthorizationIfNeeded(trigger: .userInitiated)
+                    }
+                }
             )
             .padding()
         }
         .task {
-            await photoAuthorizationController.requestAuthorizationIfNeeded()
+            await photoAuthorizationController.requestAuthorizationIfNeeded(trigger: .automatic)
             handleAuthorizationChange(photoAuthorizationController.state)
         }
         .onChange(of: scenePhase) { newPhase in
@@ -196,22 +201,25 @@ private struct ContentPlaceholder<Accessory: View>: View {
 private struct AuthorizationOverlayView: View {
     let state: PhotoLibraryAuthorizationController.AuthorizationState
     let openSettings: () -> Void
+    let requestAccess: () -> Void
 
     var body: some View {
         switch state {
         case .authorized, .limited:
             EmptyView()
-        case .notDetermined, .requesting:
-            overlayCard(showProgress: true, showSettingsButton: false)
+        case .notDetermined:
+            overlayCard(showProgress: false, showSettingsButton: false, showRequestButton: true)
+        case .requesting:
+            overlayCard(showProgress: true, showSettingsButton: false, showRequestButton: false)
         case .denied, .restricted:
-            overlayCard(showProgress: false, showSettingsButton: state.shouldShowOpenSettings)
+            overlayCard(showProgress: false, showSettingsButton: state.shouldShowOpenSettings, showRequestButton: false)
         case .error:
-            overlayCard(showProgress: false, showSettingsButton: false)
+            overlayCard(showProgress: false, showSettingsButton: false, showRequestButton: false)
         }
     }
 
     @ViewBuilder
-    private func overlayCard(showProgress: Bool, showSettingsButton: Bool) -> some View {
+    private func overlayCard(showProgress: Bool, showSettingsButton: Bool, showRequestButton: Bool) -> some View {
         VStack(spacing: 16) {
             Text(state.title)
                 .font(.title2.weight(.semibold))
@@ -226,6 +234,11 @@ private struct AuthorizationOverlayView: View {
             if showProgress {
                 ProgressView()
                     .progressViewStyle(.circular)
+            }
+
+            if showRequestButton {
+                Button("Allow Access", action: requestAccess)
+                    .buttonStyle(.borderedProminent)
             }
 
             if showSettingsButton {
