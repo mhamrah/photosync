@@ -26,7 +26,7 @@ struct AmazonPhotosConfig: Codable, Equatable {
     var searchContext: String = "customer"
     var lowResThumbnail: Bool = true
     var pageLimit: Int = 200
-    var maxPages: Int = 50
+    var maxPages: Int = 0
     var requestTimeoutSeconds: Double = 30
     var maxRetryCount: Int = 6
 

@@ -73,46 +73,60 @@ final class AmazonPhotosIndexer: ObservableObject {
 
             let config = settingsStore.syncConfig
             let limit = min(max(config.pageLimit, 1), 200)
-            let maxPages = max(config.maxPages, 1)
+            let configuredMaxPages = max(config.maxPages, 0)
+            let pageCap: Int? = configuredMaxPages > 0 ? configuredMaxPages : nil
 
             let client = try AmazonPhotosClient(config: config, credentials: credentials)
-            let firstPage = try await client.fetchSearchPage(offset: 0, limit: limit)
-            let targetTotal = min(firstPage.count, limit * maxPages)
+            var currentOffset = 0
+            var currentPage = try await client.fetchSearchPage(offset: currentOffset, limit: limit)
+            var estimatedTotal = max(currentPage.count, currentPage.data.count)
+            if let pageCap {
+                estimatedTotal = min(estimatedTotal, pageCap * limit)
+            }
 
             await MainActor.run {
-                self.state = .indexing(.init(processed: 0, total: targetTotal))
+                self.state = .indexing(.init(processed: 0, total: max(estimatedTotal, 1)))
             }
 
             var processed = 0
-            try await upsert(nodes: firstPage.data)
-            processed += firstPage.data.count
+            var pagesFetched = 0
 
-            await MainActor.run {
-                self.state = .indexing(.init(processed: min(processed, targetTotal), total: targetTotal))
-            }
+            while true {
+                try Task.checkCancellation()
 
-            if targetTotal > firstPage.data.count {
-                let remainingPages = maxPages - 1
-                for pageIndex in 0..<remainingPages {
-                    try Task.checkCancellation()
-                    let offset = (pageIndex + 1) * limit
-                    if offset >= targetTotal { break }
+                let nodes = currentPage.data
+                guard !nodes.isEmpty else { break }
 
-                    let page = try await client.fetchSearchPage(offset: offset, limit: limit)
-                    if page.data.isEmpty { break }
+                try await upsert(nodes: nodes)
+                processed += nodes.count
+                pagesFetched += 1
 
-                    try await upsert(nodes: page.data)
-                    processed += page.data.count
-
-                    await MainActor.run {
-                        self.state = .indexing(.init(processed: min(processed, targetTotal), total: targetTotal))
-                    }
+                let reportedCount = currentPage.count
+                if let pageCap {
+                    estimatedTotal = min(max(estimatedTotal, reportedCount, processed), pageCap * limit)
+                } else {
+                    estimatedTotal = max(estimatedTotal, reportedCount, processed)
                 }
+
+                await MainActor.run {
+                    self.state = .indexing(.init(processed: min(processed, estimatedTotal), total: max(estimatedTotal, processed)))
+                }
+
+                let reachedPageCap = pageCap.map { pagesFetched >= $0 } ?? false
+                let reachedEndOfData = nodes.count < limit
+                let hasReliableReportedTotal = reportedCount > limit
+                let reachedReportedTotal = hasReliableReportedTotal && processed >= reportedCount
+                if reachedPageCap || reachedEndOfData || reachedReportedTotal {
+                    break
+                }
+
+                currentOffset += limit
+                currentPage = try await client.fetchSearchPage(offset: currentOffset, limit: limit)
             }
 
             let completion = State.Completion(
-                processed: min(processed, targetTotal),
-                total: targetTotal,
+                processed: processed,
+                total: processed,
                 completedAt: Date()
             )
 

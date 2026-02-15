@@ -31,6 +31,7 @@ final class AmazonPhotosSettingsStore: ObservableObject {
 
     private enum Keys {
         static let config = "amazonPhotos.config"
+        static let didMigrateMaxPagesUnlimited = "amazonPhotos.didMigrateMaxPagesUnlimited"
         static let lastSuccessfulSyncAt = "amazonPhotos.lastSuccessfulSyncAt"
         static let lastSyncError = "amazonPhotos.lastSyncError"
         static let lastValidatedTLD = "amazonPhotos.lastValidatedTLD"
@@ -85,9 +86,7 @@ final class AmazonPhotosSettingsStore: ObservableObject {
     }
 
     func save() {
-        if let configData = try? JSONEncoder().encode(config) {
-            defaults.set(configData, forKey: Keys.config)
-        }
+        persistConfig()
 
         if credentials.isComplete {
             do {
@@ -161,6 +160,12 @@ final class AmazonPhotosSettingsStore: ObservableObject {
             maxPages = decoded.maxPages
             requestTimeoutSeconds = decoded.requestTimeoutSeconds
             maxRetryCount = decoded.maxRetryCount
+
+            if !defaults.bool(forKey: Keys.didMigrateMaxPagesUnlimited), maxPages == 50 {
+                maxPages = 0
+                persistConfig()
+                defaults.set(true, forKey: Keys.didMigrateMaxPagesUnlimited)
+            }
         }
 
         if let date = defaults.object(forKey: Keys.lastSuccessfulSyncAt) as? Date {
@@ -192,6 +197,12 @@ final class AmazonPhotosSettingsStore: ObservableObject {
             lastValidatedTLD = tld
         } catch {
             authState = .invalid(error.localizedDescription)
+        }
+    }
+
+    private func persistConfig() {
+        if let configData = try? JSONEncoder().encode(config) {
+            defaults.set(configData, forKey: Keys.config)
         }
     }
 }

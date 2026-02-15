@@ -146,13 +146,11 @@ struct ContentView: View {
         let frame = window.frame
         let windowCenter = CGPoint(x: frame.midX, y: frame.midY)
         if !visibleFrame.contains(windowCenter) {
-            let width = min(frame.width, max(320, visibleFrame.width - 32))
-            let height = min(frame.height, max(320, visibleFrame.height - 32))
             let centeredFrame = CGRect(
-                x: visibleFrame.midX - (width / 2),
-                y: visibleFrame.midY - (height / 2),
-                width: width,
-                height: height
+                x: visibleFrame.midX - (frame.width / 2),
+                y: visibleFrame.midY - (frame.height / 2),
+                width: frame.width,
+                height: frame.height
             ).integral
             window.setFrame(centeredFrame, display: true)
         }
@@ -1288,7 +1286,7 @@ private struct SettingsSectionView: View {
 
                         HStack(spacing: 24) {
                             LabeledNumericField(label: "Page Limit", value: $amazonPhotosSettingsStore.pageLimit)
-                            LabeledNumericField(label: "Max Pages", value: $amazonPhotosSettingsStore.maxPages)
+                            LabeledNumericField(label: "Max Pages (0 = All)", value: $amazonPhotosSettingsStore.maxPages)
                             LabeledNumericField(label: "Max Retries", value: $amazonPhotosSettingsStore.maxRetryCount)
                         }
 
