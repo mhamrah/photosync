@@ -16,6 +16,9 @@
         <attribute name="cloudIdentifier" optional="YES" attributeType="String" usesScalarValueType="NO"/>
         <attribute name="masterFingerprint" optional="YES" attributeType="String" usesScalarValueType="NO"/>
         <attribute name="variantFingerprint" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="originalFilename" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="md5" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="fileSizeBytes" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="timezoneOffsetSeconds" optional="YES" attributeType="Integer 32" usesScalarValueType="NO"/>
         <attribute name="sourceTypeRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
         <attribute name="localAddedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
@@ -35,7 +38,31 @@
             </constraint>
         </uniquenessConstraints>
     </entity>
+    <entity name="AmazonAsset" representedClassName="AmazonAsset" syncable="YES" codeGenerationType="none">
+        <attribute name="nodeId" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="md5" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sizeBytes" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="contentType" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="extensionName" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="createdDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="modifiedDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="contentDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="width" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="height" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="duration" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="ownerId" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="parentsRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="rawJSON" optional="YES" attributeType="Binary"/>
+        <attribute name="indexedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="nodeId"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
     <elements>
         <element name="LocalAsset" positionX="160" positionY="160" width="128" height="345"/>
+        <element name="AmazonAsset" positionX="430" positionY="160" width="128" height="255"/>
     </elements>
 </model>

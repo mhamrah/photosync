@@ -163,6 +163,7 @@ final class PhotoLibraryIndexer: ObservableObject {
         let previousModificationDate = localAsset.modificationDate
         let previousMediaTypeRaw = localAsset.mediaTypeRaw
         let nextMediaTypeRaw = Int16(asset.mediaType.rawValue)
+        let resources = PHAssetResource.assetResources(for: asset)
 
         localAsset.localIdentifier = asset.localIdentifier
         localAsset.creationDate = asset.creationDate
@@ -177,6 +178,9 @@ final class PhotoLibraryIndexer: ObservableObject {
         localAsset.hidden = asset.isHidden
         localAsset.burstIdentifier = asset.burstIdentifier
         localAsset.sourceTypeRaw = Int16(truncatingIfNeeded: asset.sourceType.rawValue)
+        localAsset.originalFilename = resources.first?.originalFilename
+        localAsset.fileSizeBytes = 0
+        localAsset.md5 = nil
 
         if localAsset.localAddedDate == nil {
             localAsset.localAddedDate = Date()

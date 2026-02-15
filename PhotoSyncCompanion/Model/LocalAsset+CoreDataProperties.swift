@@ -20,6 +20,9 @@ extension LocalAsset {
     @NSManaged public var cloudIdentifier: String?
     @NSManaged public var masterFingerprint: String?
     @NSManaged public var variantFingerprint: String?
+    @NSManaged public var originalFilename: String?
+    @NSManaged public var md5: String?
+    @NSManaged public var fileSizeBytes: Int64
     @NSManaged public var timezoneOffsetSeconds: NSNumber?
     @NSManaged public var sourceTypeRaw: Int16
     @NSManaged public var localAddedDate: Date?

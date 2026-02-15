@@ -17,6 +17,14 @@
     6B7721CF2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721CC2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift */; };
     6B7721D22B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721D12B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift */; };
     6B7721D62B6F2C5400B16B7D /* PhotoLibraryIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */; };
+    6B9000212C10111100B16B7D /* AmazonAsset+CoreDataClass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000112C10111100B16B7D /* AmazonAsset+CoreDataClass.swift */; };
+    6B9000222C10111100B16B7D /* AmazonAsset+CoreDataProperties.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000122C10111100B16B7D /* AmazonAsset+CoreDataProperties.swift */; };
+    6B9000232C10111100B16B7D /* ComparisonEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000132C10111100B16B7D /* ComparisonEngine.swift */; };
+    6B9000242C10111100B16B7D /* AmazonPhotosModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000142C10111100B16B7D /* AmazonPhotosModels.swift */; };
+    6B9000252C10111100B16B7D /* AmazonPhotosCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000152C10111100B16B7D /* AmazonPhotosCredentialStore.swift */; };
+    6B9000262C10111100B16B7D /* AmazonPhotosClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000162C10111100B16B7D /* AmazonPhotosClient.swift */; };
+    6B9000272C10111100B16B7D /* AmazonPhotosSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000172C10111100B16B7D /* AmazonPhotosSettingsStore.swift */; };
+    6B9000282C10111100B16B7D /* AmazonPhotosIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9000182C10111100B16B7D /* AmazonPhotosIndexer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +41,14 @@
     6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryIndexer.swift; sourceTree = "<group>"; };
     6B7721C82B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = PhotoSyncCompanionModel.xcdatamodel; sourceTree = "<group>"; };
     6B7721D02B6F117500B16B7D /* PhotoSyncCompanion.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PhotoSyncCompanion.entitlements; sourceTree = "<group>"; };
+    6B9000112C10111100B16B7D /* AmazonAsset+CoreDataClass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmazonAsset+CoreDataClass.swift"; sourceTree = "<group>"; };
+    6B9000122C10111100B16B7D /* AmazonAsset+CoreDataProperties.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmazonAsset+CoreDataProperties.swift"; sourceTree = "<group>"; };
+    6B9000132C10111100B16B7D /* ComparisonEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComparisonEngine.swift; sourceTree = "<group>"; };
+    6B9000142C10111100B16B7D /* AmazonPhotosModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmazonPhotosModels.swift; sourceTree = "<group>"; };
+    6B9000152C10111100B16B7D /* AmazonPhotosCredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmazonPhotosCredentialStore.swift; sourceTree = "<group>"; };
+    6B9000162C10111100B16B7D /* AmazonPhotosClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmazonPhotosClient.swift; sourceTree = "<group>"; };
+    6B9000172C10111100B16B7D /* AmazonPhotosSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmazonPhotosSettingsStore.swift; sourceTree = "<group>"; };
+    6B9000182C10111100B16B7D /* AmazonPhotosIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmazonPhotosIndexer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -92,6 +108,8 @@
         6B7721C92B6F117500B16B7D /* PhotoSyncCompanionModel.xcdatamodeld */,
         6B7721CB2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift */,
         6B7721CC2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift */,
+        6B9000112C10111100B16B7D /* AmazonAsset+CoreDataClass.swift */,
+        6B9000122C10111100B16B7D /* AmazonAsset+CoreDataProperties.swift */,
       );
       path = Model;
       sourceTree = "<group>";
@@ -101,8 +119,22 @@
       children = (
         6B7721D12B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift */,
         6B7721D52B6F2C5400B16B7D /* PhotoLibraryIndexer.swift */,
+        6B9000132C10111100B16B7D /* ComparisonEngine.swift */,
+        6B9000192C10111100B16B7D /* AmazonPhotos */,
       );
       path = Services;
+      sourceTree = "<group>";
+    };
+    6B9000192C10111100B16B7D /* AmazonPhotos */ = {
+      isa = PBXGroup;
+      children = (
+        6B9000142C10111100B16B7D /* AmazonPhotosModels.swift */,
+        6B9000152C10111100B16B7D /* AmazonPhotosCredentialStore.swift */,
+        6B9000162C10111100B16B7D /* AmazonPhotosClient.swift */,
+        6B9000172C10111100B16B7D /* AmazonPhotosSettingsStore.swift */,
+        6B9000182C10111100B16B7D /* AmazonPhotosIndexer.swift */,
+      );
+      path = AmazonPhotos;
       sourceTree = "<group>";
     };
     6B7721B72B6F0C5E00B16B7E /* Preview Content */ = {
@@ -189,8 +221,16 @@
         6B7721C62B6F117500B16B7D /* PersistenceController.swift in Sources */,
         6B7721CE2B6F117500B16B7D /* LocalAsset+CoreDataClass.swift in Sources */,
         6B7721CF2B6F117500B16B7D /* LocalAsset+CoreDataProperties.swift in Sources */,
+        6B9000212C10111100B16B7D /* AmazonAsset+CoreDataClass.swift in Sources */,
+        6B9000222C10111100B16B7D /* AmazonAsset+CoreDataProperties.swift in Sources */,
         6B7721D22B6F117500B16B7D /* PhotoLibraryAuthorizationController.swift in Sources */,
         6B7721D62B6F2C5400B16B7D /* PhotoLibraryIndexer.swift in Sources */,
+        6B9000232C10111100B16B7D /* ComparisonEngine.swift in Sources */,
+        6B9000242C10111100B16B7D /* AmazonPhotosModels.swift in Sources */,
+        6B9000252C10111100B16B7D /* AmazonPhotosCredentialStore.swift in Sources */,
+        6B9000262C10111100B16B7D /* AmazonPhotosClient.swift in Sources */,
+        6B9000272C10111100B16B7D /* AmazonPhotosSettingsStore.swift in Sources */,
+        6B9000282C10111100B16B7D /* AmazonPhotosIndexer.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };

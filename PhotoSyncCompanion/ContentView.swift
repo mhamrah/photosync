@@ -1,10 +1,11 @@
+import AppKit
 import CoreData
 import Photos
 import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
     case summary
-    case library
+    case libraries
     case comparison
     case transferQueue
     case settings
@@ -14,7 +15,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .summary: return "Dashboard"
-        case .library: return "Libraries"
+        case .libraries: return "Libraries"
         case .comparison: return "Comparison"
         case .transferQueue: return "Transfer Queue"
         case .settings: return "Settings"
@@ -24,7 +25,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var systemImageName: String {
         switch self {
         case .summary: return "rectangle.grid.1x2"
-        case .library: return "photo.on.rectangle.angled"
+        case .libraries: return "photo.stack"
         case .comparison: return "square.stack.3d.up"
         case .transferQueue: return "arrow.down.circle"
         case .settings: return "gear"
@@ -32,17 +33,14 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
-private enum FeatureFlags {
-    static var similarityFeaturesEnabled: Bool {
-        UserDefaults.standard.object(forKey: "feature.similarity.enabled") as? Bool ?? true
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject private var photoAuthorizationController: PhotoLibraryAuthorizationController
     @EnvironmentObject private var photoLibraryIndexer: PhotoLibraryIndexer
-    @EnvironmentObject private var exactDuplicateIndexer: ExactDuplicateIndexer
+    @EnvironmentObject private var amazonPhotosSettingsStore: AmazonPhotosSettingsStore
+    @EnvironmentObject private var amazonPhotosIndexer: AmazonPhotosIndexer
+    @EnvironmentObject private var comparisonViewModel: ComparisonViewModel
     @Environment(\.scenePhase) private var scenePhase
+
     @State private var selection: AppSection? = .summary
 
     var body: some View {
@@ -57,15 +55,15 @@ struct ContentView: View {
                 Group {
                     switch selection ?? .summary {
                     case .summary:
-                        SummaryPlaceholder()
-                    case .library:
-                        PhotoGridPlaceholder()
+                        SummarySectionView()
+                    case .libraries:
+                        LibrariesSectionView()
                     case .comparison:
-                        ComparisonPlaceholder()
+                        ComparisonSectionView()
                     case .transferQueue:
                         TransferQueuePlaceholder()
                     case .settings:
-                        SettingsPlaceholder()
+                        SettingsSectionView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -89,6 +87,7 @@ struct ContentView: View {
         .task {
             await photoAuthorizationController.requestAuthorizationIfNeeded(trigger: .automatic)
             handleAuthorizationChange(photoAuthorizationController.state)
+            comparisonViewModel.refresh()
         }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
@@ -99,8 +98,13 @@ struct ContentView: View {
             handleAuthorizationChange(newState)
         }
         .onChange(of: photoLibraryIndexer.state) { newState in
-            if FeatureFlags.similarityFeaturesEnabled, case .completed = newState {
-                exactDuplicateIndexer.startIndexingIfNeeded()
+            if case .completed = newState {
+                comparisonViewModel.refresh()
+            }
+        }
+        .onChange(of: amazonPhotosIndexer.state) { newState in
+            if case .completed = newState {
+                comparisonViewModel.refresh()
             }
         }
     }
@@ -109,73 +113,83 @@ struct ContentView: View {
         switch state {
         case .authorized, .limited:
             photoLibraryIndexer.startIndexingIfNeeded()
-            if FeatureFlags.similarityFeaturesEnabled, case .completed = photoLibraryIndexer.state {
-                exactDuplicateIndexer.startIndexingIfNeeded()
-            }
         case .denied, .restricted, .error:
             photoLibraryIndexer.cancelIndexing()
-            exactDuplicateIndexer.cancelIndexing()
         case .notDetermined, .requesting:
             break
         }
     }
 }
 
-private struct SummaryPlaceholder: View {
+private struct SummarySectionView: View {
     @EnvironmentObject private var photoLibraryIndexer: PhotoLibraryIndexer
-    @EnvironmentObject private var exactDuplicateIndexer: ExactDuplicateIndexer
+    @EnvironmentObject private var amazonPhotosIndexer: AmazonPhotosIndexer
+    @EnvironmentObject private var amazonPhotosSettingsStore: AmazonPhotosSettingsStore
+    @EnvironmentObject private var comparisonViewModel: ComparisonViewModel
 
     var body: some View {
-        ContentPlaceholder(
+        SectionContainer(
             title: "Sync Overview",
-            message: "Status insights, totals, and last synchronization summary will appear here.",
-            accessory: {
-                VStack(alignment: .leading, spacing: 16) {
-                    IndexerStatusView(state: photoLibraryIndexer.state)
-                    DuplicateIndexerStatusView(state: exactDuplicateIndexer.state)
+            message: "Local and Amazon index status plus duplicate summary."
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                IndexerStatusView(state: photoLibraryIndexer.state)
+                AmazonIndexerStatusView(state: amazonPhotosIndexer.state)
+                ComparisonSummaryCard(
+                    summary: comparisonViewModel.summary,
+                    isComputing: comparisonViewModel.isComputing,
+                    errorMessage: comparisonViewModel.errorMessage
+                )
+                HStack(spacing: 12) {
+                    Button("Sync Amazon Metadata") {
+                        amazonPhotosSettingsStore.save()
+                        amazonPhotosIndexer.startIndexingIfNeeded(force: true)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!amazonPhotosSettingsStore.hasCompleteCredentials)
+
+                    Button("Refresh Comparison") {
+                        comparisonViewModel.refresh()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
-        )
+        }
     }
 }
 
-private struct PhotoGridPlaceholder: View {
+private struct LibrariesSectionView: View {
     var body: some View {
-        PhotoLibraryGridWorkspaceView()
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Libraries")
+                .font(.largeTitle)
+                .bold()
+            Text("Browse iPhoto and Amazon Photos in tile view, navigate local photos by month/year, and delete from Amazon, iCloud, or both.")
+                .foregroundStyle(.secondary)
+
+            TabView {
+                LocalLibraryTabView()
+                    .tabItem {
+                        Label("iPhoto", systemImage: "photo.on.rectangle")
+                    }
+
+                AmazonLibraryTabView()
+                    .tabItem {
+                        Label("Amazon Photos", systemImage: "shippingbox")
+                    }
+            }
+        }
+        .padding(24)
     }
 }
 
-private struct ComparisonPlaceholder: View {
-    var body: some View {
-        ComparisonWorkspaceView()
-    }
-}
-
-private struct TransferQueuePlaceholder: View {
-    var body: some View {
-        ContentPlaceholder(
-            title: "Transfer Queue",
-            message: "Monitor Amazon-to-Photos imports, retry failures, and review completed transfers."
-        )
-    }
-}
-
-private struct SettingsPlaceholder: View {
-    var body: some View {
-        ContentPlaceholder(
-            title: "Settings",
-            message: "Configure accounts, sync preferences, storage options, and privacy controls."
-        )
-    }
-}
-
-private enum PhotoGridDateFilter: Hashable {
+private enum LocalGridDateFilter: Hashable {
     case all
     case year(Int)
     case month(Int, Int)
 }
 
-private enum PhotoDeleteTarget: String, CaseIterable, Identifiable {
+private enum LocalDeleteTarget: String, CaseIterable, Identifiable {
     case amazon
     case iCloud
     case both
@@ -189,29 +203,34 @@ private enum PhotoDeleteTarget: String, CaseIterable, Identifiable {
         case .iCloud:
             return "Delete from iCloud"
         case .both:
-            return "Delete from Amazon and iCloud"
+            return "Delete from Both"
         }
     }
 
-    func confirmationMessage(photoCount: Int) -> String {
+    var confirmationTitle: String {
         switch self {
         case .amazon:
-            return "Delete \(photoCount) selected photo(s) from Amazon?"
+            return "Delete from Amazon?"
         case .iCloud:
-            return "Delete \(photoCount) selected photo(s) from iCloud/Apple Photos?"
+            return "Move to iPhoto Trash?"
         case .both:
-            return "Delete \(photoCount) selected photo(s) from Amazon and iCloud/Apple Photos?"
+            return "Delete from Amazon and iCloud?"
+        }
+    }
+
+    var confirmationMessage: String {
+        switch self {
+        case .amazon:
+            return "This deletes the matched asset from Amazon Photos."
+        case .iCloud:
+            return "This moves the selected asset to Recently Deleted in Photos."
+        case .both:
+            return "This deletes the matched Amazon asset and moves the selected iPhoto asset to Recently Deleted."
         }
     }
 }
 
-private struct PhotoDeletionSummary {
-    let requestedCount: Int
-    let amazonDeletedCount: Int
-    let iCloudDeletedCount: Int
-}
-
-private struct PhotoGridMonthBucket: Identifiable {
+private struct LocalGridMonthBucket: Identifiable {
     let year: Int
     let month: Int
     let count: Int
@@ -229,317 +248,81 @@ private struct PhotoGridMonthBucket: Identifiable {
     }()
 }
 
-private struct PhotoGridYearBucket: Identifiable {
+private struct LocalGridYearBucket: Identifiable {
     let year: Int
     let totalCount: Int
-    let months: [PhotoGridMonthBucket]
+    let months: [LocalGridMonthBucket]
 
     var id: Int { year }
 }
 
-private struct PhotoDeletionService {
-    private let persistenceController: PersistenceController
-
-    init(persistenceController: PersistenceController) {
-        self.persistenceController = persistenceController
-    }
-
-    func delete(localIdentifiers: [String], target: PhotoDeleteTarget) async throws -> PhotoDeletionSummary {
-        guard !localIdentifiers.isEmpty else {
-            return PhotoDeletionSummary(requestedCount: 0, amazonDeletedCount: 0, iCloudDeletedCount: 0)
-        }
-
-        var amazonDeletedCount = 0
-        var iCloudDeletedCount = 0
-
-        if target == .amazon || target == .both {
-            amazonDeletedCount = try await clearAmazonCloudIdentifiers(localIdentifiers: localIdentifiers)
-        }
-
-        if target == .iCloud || target == .both {
-            try await deleteFromPhotoLibrary(localIdentifiers: localIdentifiers)
-            iCloudDeletedCount = try await deleteLocalRecords(localIdentifiers: localIdentifiers)
-        }
-
-        return PhotoDeletionSummary(
-            requestedCount: localIdentifiers.count,
-            amazonDeletedCount: amazonDeletedCount,
-            iCloudDeletedCount: iCloudDeletedCount
-        )
-    }
-
-    private func clearAmazonCloudIdentifiers(localIdentifiers: [String]) async throws -> Int {
-        let context = persistenceController.container.newBackgroundContext()
-        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-        context.automaticallyMergesChangesFromParent = false
-
-        return try await context.perform {
-            let request: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
-            request.predicate = NSPredicate(
-                format: "localIdentifier IN %@ AND cloudIdentifier != nil",
-                localIdentifiers
-            )
-
-            let assets = try context.fetch(request)
-            for asset in assets {
-                asset.cloudIdentifier = nil
-            }
-
-            if context.hasChanges {
-                try context.save()
-                context.reset()
-            }
-
-            return assets.count
-        }
-    }
-
-    private func deleteLocalRecords(localIdentifiers: [String]) async throws -> Int {
-        let context = persistenceController.container.newBackgroundContext()
-        context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-        context.automaticallyMergesChangesFromParent = false
-
-        return try await context.perform {
-            let request: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
-            request.predicate = NSPredicate(format: "localIdentifier IN %@", localIdentifiers)
-
-            let assets = try context.fetch(request)
-            for asset in assets {
-                context.delete(asset)
-            }
-
-            if context.hasChanges {
-                try context.save()
-                context.reset()
-            }
-
-            return assets.count
-        }
-    }
-
-    private func deleteFromPhotoLibrary(localIdentifiers: [String]) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
-            guard fetchResult.count > 0 else {
-                continuation.resume(returning: ())
-                return
-            }
-
-            PHPhotoLibrary.shared().performChanges({
-                PHAssetChangeRequest.deleteAssets(fetchResult)
-            }) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                guard success else {
-                    continuation.resume(throwing: DeletionError.deletionFailed)
-                    return
-                }
-                continuation.resume(returning: ())
-            }
-        }
-    }
-
-    private enum DeletionError: LocalizedError {
-        case deletionFailed
-
-        var errorDescription: String? {
-            switch self {
-            case .deletionFailed:
-                return "Photo library deletion failed."
-            }
-        }
-    }
-}
-
-@MainActor
-private final class PhotoLibraryGridViewModel: ObservableObject {
-    @Published var selectedFilter: PhotoGridDateFilter? = .all
-    @Published var selectedIdentifiers: Set<String> = []
-    @Published var isDeleting = false
-    @Published var statusMessage: String?
-    @Published var errorMessage: String?
-
-    private let deletionService: PhotoDeletionService
-
-    init(persistenceController: PersistenceController = .shared) {
-        self.deletionService = PhotoDeletionService(persistenceController: persistenceController)
-    }
-
-    func toggleSelection(localIdentifier: String) {
-        if selectedIdentifiers.contains(localIdentifier) {
-            selectedIdentifiers.remove(localIdentifier)
-        } else {
-            selectedIdentifiers.insert(localIdentifier)
-        }
-    }
-
-    func clearSelection() {
-        selectedIdentifiers.removeAll()
-    }
-
-    func pruneSelection(validIdentifiers: Set<String>) {
-        selectedIdentifiers.formIntersection(validIdentifiers)
-    }
-
-    func deleteSelected(to target: PhotoDeleteTarget) async -> Bool {
-        let identifiers = Array(selectedIdentifiers)
-        guard !identifiers.isEmpty else {
-            return false
-        }
-
-        isDeleting = true
-        defer { isDeleting = false }
-
-        do {
-            let summary = try await deletionService.delete(localIdentifiers: identifiers, target: target)
-            selectedIdentifiers.removeAll()
-            errorMessage = nil
-            statusMessage = Self.makeStatusMessage(summary: summary, target: target)
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            statusMessage = nil
-            return false
-        }
-    }
-
-    private static func makeStatusMessage(summary: PhotoDeletionSummary, target: PhotoDeleteTarget) -> String {
-        switch target {
-        case .amazon:
-            return "Amazon delete completed for \(summary.amazonDeletedCount.formatted()) of \(summary.requestedCount.formatted()) selected photos."
-        case .iCloud:
-            return "iCloud delete completed for \(summary.iCloudDeletedCount.formatted()) photos."
-        case .both:
-            return "Delete completed. Amazon: \(summary.amazonDeletedCount.formatted()), iCloud: \(summary.iCloudDeletedCount.formatted())."
-        }
-    }
-}
-
-private struct PhotoLibraryGridWorkspaceView: View {
-    @EnvironmentObject private var photoLibraryIndexer: PhotoLibraryIndexer
-    @EnvironmentObject private var similarityIndexer: ExactDuplicateIndexer
-    @StateObject private var viewModel = PhotoLibraryGridViewModel()
-    @State private var pendingDeleteTarget: PhotoDeleteTarget?
-    @State private var showDeleteConfirmation = false
+private struct LocalLibraryTabView: View {
+    @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject private var amazonPhotosSettingsStore: AmazonPhotosSettingsStore
 
     @FetchRequest(
-        sortDescriptors: [
-            NSSortDescriptor(key: "creationDate", ascending: false),
-            NSSortDescriptor(key: "localIdentifier", ascending: true)
-        ],
+        sortDescriptors: [NSSortDescriptor(key: "creationDate", ascending: false)],
         predicate: NSPredicate(format: "mediaTypeRaw == %d", Int16(PHAssetMediaType.image.rawValue)),
         animation: .default
     )
-    private var photoAssets: FetchedResults<LocalAsset>
+    private var localAssets: FetchedResults<LocalAsset>
+
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(key: "createdDate", ascending: false)],
+        animation: .default
+    )
+    private var amazonAssets: FetchedResults<AmazonAsset>
+
+    @StateObject private var syncController = LibrarySyncController()
+    @State private var selectedLocalObjectID: NSManagedObjectID?
+    @State private var localThumbnailCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var localFullCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var amazonThumbnailCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var selectedDateFilter: LocalGridDateFilter? = .all
+    @State private var pendingDeleteObjectID: NSManagedObjectID?
+    @State private var pendingDeleteTarget: LocalDeleteTarget?
+    @State private var showDeleteConfirmation = false
+    @State private var isPerformingDelete = false
 
     private let calendar = Calendar.autoupdatingCurrent
-    private let gridColumns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12)]
 
-    var body: some View {
-        HStack(spacing: 0) {
-            timelineSidebar
-                .frame(minWidth: 250, idealWidth: 260, maxWidth: 280)
+    private var allLocalAssets: [LocalAsset] {
+        Array(localAssets)
+    }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                filterSummary
-
-                if let statusMessage = viewModel.statusMessage {
-                    Text(statusMessage)
-                        .font(.callout)
-                        .foregroundStyle(.green)
-                }
-
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-
-                if filteredAssets.isEmpty {
-                    VStack(alignment: .center, spacing: 10) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 34))
-                            .foregroundStyle(.secondary)
-                        Text("No Photos")
-                            .font(.headline)
-                        Text("No photos match the selected month or year.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: gridColumns, spacing: 12) {
-                            ForEach(filteredAssets, id: \.localIdentifier) { asset in
-                                PhotoGridTile(
-                                    localIdentifier: asset.localIdentifier,
-                                    creationDate: asset.creationDate,
-                                    isFavorite: asset.isFavorite,
-                                    keepPreferred: asset.keepPreferred,
-                                    isSelected: viewModel.selectedIdentifiers.contains(asset.localIdentifier),
-                                    onTap: { viewModel.toggleSelection(localIdentifier: asset.localIdentifier) }
-                                )
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
+    private var filteredLocalAssets: [LocalAsset] {
+        let filter = selectedDateFilter ?? .all
+        return allLocalAssets.filter { asset in
+            switch filter {
+            case .all:
+                return true
+            case .year(let year):
+                guard let creationDate = asset.creationDate else { return false }
+                return calendar.component(.year, from: creationDate) == year
+            case .month(let year, let month):
+                guard let creationDate = asset.creationDate else { return false }
+                let components = calendar.dateComponents([.year, .month], from: creationDate)
+                return components.year == year && components.month == month
             }
-            .padding(22)
-        }
-        .onChange(of: assetIdentifierSnapshot) { snapshot in
-            viewModel.pruneSelection(validIdentifiers: Set(snapshot))
-        }
-        .alert(
-            "Delete Selected Photos",
-            isPresented: $showDeleteConfirmation,
-            presenting: pendingDeleteTarget
-        ) { target in
-            Button("Cancel", role: .cancel) {
-                pendingDeleteTarget = nil
-            }
-            Button("Delete", role: .destructive) {
-                Task {
-                    let didDelete = await viewModel.deleteSelected(to: target)
-                    pendingDeleteTarget = nil
-                    if didDelete {
-                        photoLibraryIndexer.startIndexingIfNeeded(force: true)
-                        if FeatureFlags.similarityFeaturesEnabled {
-                            similarityIndexer.startIndexingIfNeeded(force: true)
-                        }
-                    }
-                }
-            }
-        } message: { target in
-            Text(target.confirmationMessage(photoCount: viewModel.selectedIdentifiers.count))
         }
     }
 
-    private var allAssets: [LocalAsset] {
-        Array(photoAssets)
+    private var selectedLocal: LocalAsset? {
+        if let selectedLocalObjectID {
+            return filteredLocalAssets.first(where: { $0.objectID == selectedLocalObjectID }) ?? filteredLocalAssets.first
+        }
+        return filteredLocalAssets.first
     }
 
-    private var assetIdentifierSnapshot: [String] {
-        allAssets.map(\.localIdentifier)
+    private var matchedAmazon: AmazonAsset? {
+        guard let selectedLocal else { return nil }
+        return AssetMatcher.matchAmazon(for: selectedLocal, among: Array(amazonAssets))
     }
 
-    private var filteredAssets: [LocalAsset] {
-        let filter = viewModel.selectedFilter ?? .all
-        return allAssets.filter { matches($0, filter: filter) }
-    }
-
-    private var yearBuckets: [PhotoGridYearBucket] {
+    private var timelineBuckets: [LocalGridYearBucket] {
         var monthCounts: [MonthKey: Int] = [:]
-        monthCounts.reserveCapacity(allAssets.count)
 
-        for asset in allAssets {
+        for asset in allLocalAssets {
             guard let creationDate = asset.creationDate else { continue }
             let components = calendar.dateComponents([.year, .month], from: creationDate)
             guard let year = components.year, let month = components.month else { continue }
@@ -551,14 +334,14 @@ private struct PhotoLibraryGridWorkspaceView: View {
             let months = keys
                 .sorted { $0.month > $1.month }
                 .map { key in
-                    PhotoGridMonthBucket(
+                    LocalGridMonthBucket(
                         year: key.year,
                         month: key.month,
                         count: monthCounts[key] ?? 0
                     )
                 }
 
-            return PhotoGridYearBucket(
+            return LocalGridYearBucket(
                 year: year,
                 totalCount: months.reduce(0) { $0 + $1.count },
                 months: months
@@ -567,56 +350,186 @@ private struct PhotoLibraryGridWorkspaceView: View {
         .sorted { $0.year > $1.year }
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Libraries")
-                    .font(.largeTitle)
-                    .bold()
-                Text("Browse your photo grid by year and month, then delete selected photos from Amazon, iCloud, or both.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+    var body: some View {
+        Group {
+            if allLocalAssets.isEmpty {
+                EmptyStateView(
+                    title: "No iPhoto Assets Indexed",
+                    message: "Grant Photos access and allow local indexing to finish."
+                )
+            } else {
+                populatedLocalLibraryContent
             }
-
-            Spacer()
-
-            if viewModel.isDeleting {
-                ProgressView()
-                    .controlSize(.small)
-            }
-
-            Menu {
-                ForEach(PhotoDeleteTarget.allCases) { target in
-                    Button(target.label) {
-                        pendingDeleteTarget = target
-                        showDeleteConfirmation = true
-                    }
-                }
-            } label: {
-                Label("Delete Selected", systemImage: "trash")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(viewModel.selectedIdentifiers.isEmpty || viewModel.isDeleting)
         }
     }
 
-    private var filterSummary: some View {
-        HStack(spacing: 14) {
-            Text(activeFilterText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private var populatedLocalLibraryContent: some View {
+        HStack(spacing: 0) {
+            timelineSidebar
+                .frame(minWidth: 240, idealWidth: 250, maxWidth: 270)
 
-            Spacer()
-
-            Text("\(viewModel.selectedIdentifiers.count.formatted()) selected")
-                .font(.callout.weight(.semibold))
-
-            Button("Clear Selection") {
-                viewModel.clearSelection()
-            }
-            .buttonStyle(.bordered)
-            .disabled(viewModel.selectedIdentifiers.isEmpty)
+            Divider()
+            localGridPane
+            Divider()
+            localDetailPane
         }
+        .onAppear {
+            if selectedLocalObjectID == nil {
+                selectedLocalObjectID = filteredLocalAssets.first?.objectID
+            }
+        }
+        .onChange(of: selectedDateFilter) { _ in
+            guard let selectedLocalObjectID else {
+                selectedLocalObjectID = filteredLocalAssets.first?.objectID
+                return
+            }
+            if !filteredLocalAssets.contains(where: { $0.objectID == selectedLocalObjectID }) {
+                self.selectedLocalObjectID = filteredLocalAssets.first?.objectID
+            }
+        }
+        .onChange(of: selectedLocalObjectID) { _ in
+            guard let selectedLocal else { return }
+            loadLocalFullImage(for: selectedLocal)
+            if let matchedAmazon {
+                loadAmazonThumbnail(for: matchedAmazon)
+            }
+        }
+        .alert(
+            pendingDeleteTarget?.confirmationTitle ?? "Delete?",
+            isPresented: $showDeleteConfirmation,
+            presenting: pendingDeleteTarget
+        ) { target in
+            Button("Delete", role: .destructive) {
+                Task {
+                    await performDelete(target: target)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteObjectID = nil
+                pendingDeleteTarget = nil
+            }
+        } message: { target in
+            Text(target.confirmationMessage)
+        }
+    }
+
+    private var localGridPane: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                ForEach(filteredLocalAssets, id: \.objectID) { asset in
+                    localTile(for: asset)
+                }
+            }
+            .padding(16)
+        }
+        .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func localTile(for asset: LocalAsset) -> some View {
+        Button {
+            selectedLocalObjectID = asset.objectID
+            loadLocalFullImage(for: asset)
+        } label: {
+            LibraryTile(
+                image: localThumbnailCache[asset.objectID],
+                title: asset.originalFilename ?? "Untitled",
+                subtitle: DateFormatter.libraryDate(asset.creationDate),
+                isSelected: asset.objectID == selectedLocal?.objectID
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            if selectedLocalObjectID == nil {
+                selectedLocalObjectID = asset.objectID
+            }
+            loadLocalThumbnail(for: asset)
+        }
+    }
+
+    private var localDetailPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Selected iPhoto Asset")
+                .font(.headline)
+
+            if let selectedLocal {
+                DetailImageCard(
+                    image: localFullCache[selectedLocal.objectID],
+                    placeholderText: "Loading full-size iPhoto image…"
+                )
+                .frame(height: 280)
+                .onAppear {
+                    loadLocalFullImage(for: selectedLocal)
+                }
+
+                metadataBlock(
+                    title: selectedLocal.originalFilename ?? selectedLocal.localIdentifier,
+                    line1: "Size: \(selectedLocal.pixelWidth)x\(selectedLocal.pixelHeight)",
+                    line2: "Date: \(DateFormatter.libraryDate(selectedLocal.creationDate))"
+                )
+
+                Divider()
+
+                Text("Matched Amazon Photo")
+                    .font(.headline)
+
+                if let matchedAmazon {
+                    DetailImageCard(
+                        image: amazonThumbnailCache[matchedAmazon.objectID],
+                        placeholderText: "Loading Amazon thumbnail…"
+                    )
+                    .frame(height: 170)
+                    .onAppear {
+                        loadAmazonThumbnail(for: matchedAmazon)
+                    }
+
+                    metadataBlock(
+                        title: matchedAmazon.name ?? matchedAmazon.nodeId,
+                        line1: "Size: \(matchedAmazon.width)x\(matchedAmazon.height)",
+                        line2: "Date: \(DateFormatter.libraryDate(matchedAmazon.contentDate ?? matchedAmazon.createdDate))"
+                    )
+                } else {
+                    Text("No corresponding Amazon asset found.")
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 10) {
+                    Button("Sync This To Amazon") {
+                        Task {
+                            await syncController.syncLocalToAmazon(
+                                localAsset: selectedLocal,
+                                settingsStore: amazonPhotosSettingsStore
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(syncController.isSyncing || !amazonPhotosSettingsStore.hasCompleteCredentials)
+
+                    Menu {
+                        ForEach(LocalDeleteTarget.allCases) { target in
+                            Button(target.label, role: .destructive) {
+                                pendingDeleteObjectID = selectedLocal.objectID
+                                pendingDeleteTarget = target
+                                showDeleteConfirmation = true
+                            }
+                            .disabled(isDeleteTargetDisabled(target))
+                        }
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(syncController.isSyncing || isPerformingDelete)
+                }
+            } else {
+                Text("Select a local image.")
+                    .foregroundStyle(.secondary)
+            }
+
+            SyncStatusView(controller: syncController)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(width: 430)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var timelineSidebar: some View {
@@ -626,10 +539,15 @@ private struct PhotoLibraryGridWorkspaceView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
 
-            List(selection: $viewModel.selectedFilter) {
-                timelineRow(title: "All Photos", count: allAssets.count, filter: .all, leadingPadding: 0)
+            Text(activeFilterText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
 
-                ForEach(yearBuckets) { year in
+            List(selection: $selectedDateFilter) {
+                timelineRow(title: "All Photos", count: allLocalAssets.count, filter: .all, leadingPadding: 0)
+
+                ForEach(timelineBuckets) { year in
                     timelineRow(
                         title: "\(year.year)",
                         count: year.totalCount,
@@ -651,10 +569,22 @@ private struct PhotoLibraryGridWorkspaceView: View {
         }
     }
 
+    private var activeFilterText: String {
+        switch selectedDateFilter ?? .all {
+        case .all:
+            return "Showing all \(allLocalAssets.count.formatted()) photos."
+        case .year(let year):
+            return "Showing \(filteredLocalAssets.count.formatted()) photos in \(year)."
+        case .month(let year, let month):
+            let monthName = LocalGridMonthBucket(year: year, month: month, count: 0).title
+            return "Showing \(filteredLocalAssets.count.formatted()) photos in \(monthName) \(year)."
+        }
+    }
+
     private func timelineRow(
         title: String,
         count: Int,
-        filter: PhotoGridDateFilter,
+        filter: LocalGridDateFilter,
         leadingPadding: CGFloat
     ) -> some View {
         HStack(spacing: 8) {
@@ -670,30 +600,185 @@ private struct PhotoLibraryGridWorkspaceView: View {
         .tag(Optional(filter))
     }
 
-    private var activeFilterText: String {
-        switch viewModel.selectedFilter ?? .all {
-        case .all:
-            return "Showing all \(allAssets.count.formatted()) photos."
-        case .year(let year):
-            let count = filteredAssets.count
-            return "Showing \(count.formatted()) photos in \(year)."
-        case .month(let year, let month):
-            let monthName = PhotoGridMonthBucket(year: year, month: month, count: 0).title
-            return "Showing \(filteredAssets.count.formatted()) photos in \(monthName) \(year)."
+    private func isDeleteTargetDisabled(_ target: LocalDeleteTarget) -> Bool {
+        switch target {
+        case .iCloud:
+            return selectedLocal == nil
+        case .amazon, .both:
+            return selectedLocal == nil || matchedAmazon == nil || !amazonPhotosSettingsStore.hasCompleteCredentials
         }
     }
 
-    private func matches(_ asset: LocalAsset, filter: PhotoGridDateFilter) -> Bool {
-        switch filter {
-        case .all:
-            return true
-        case .year(let year):
-            guard let creationDate = asset.creationDate else { return false }
-            return calendar.component(.year, from: creationDate) == year
-        case .month(let year, let month):
-            guard let creationDate = asset.creationDate else { return false }
-            let components = calendar.dateComponents([.year, .month], from: creationDate)
-            return components.year == year && components.month == month
+    @MainActor
+    private func performDelete(target: LocalDeleteTarget) async {
+        guard let objectID = pendingDeleteObjectID else { return }
+        guard let localAsset = localAssets.first(where: { $0.objectID == objectID }) else {
+            syncController.statusIsError = true
+            syncController.statusMessage = "Selected iPhoto asset is no longer available."
+            pendingDeleteObjectID = nil
+            pendingDeleteTarget = nil
+            return
+        }
+
+        let matchedAmazonAsset = AssetMatcher.matchAmazon(for: localAsset, among: Array(amazonAssets))
+        isPerformingDelete = true
+        defer {
+            isPerformingDelete = false
+            pendingDeleteObjectID = nil
+            pendingDeleteTarget = nil
+        }
+
+        switch target {
+        case .amazon:
+            guard let matchedAmazonAsset else {
+                syncController.statusIsError = true
+                syncController.statusMessage = "No matching Amazon asset was found for this photo."
+                return
+            }
+            let success = await syncController.deleteAmazonAsset(
+                nodeID: matchedAmazonAsset.nodeId,
+                displayName: matchedAmazonAsset.name,
+                settingsStore: amazonPhotosSettingsStore
+            )
+            if success {
+                removeDeletedAmazonAsset(nodeID: matchedAmazonAsset.nodeId)
+            }
+        case .iCloud:
+            let success = await syncController.deleteLocalAsset(
+                localIdentifier: localAsset.localIdentifier,
+                displayName: localAsset.originalFilename
+            )
+            if success {
+                removeDeletedLocalAsset(objectID: objectID)
+            }
+        case .both:
+            guard let matchedAmazonAsset else {
+                syncController.statusIsError = true
+                syncController.statusMessage = "No matching Amazon asset was found for this photo."
+                return
+            }
+            let amazonSuccess = await syncController.deleteAmazonAsset(
+                nodeID: matchedAmazonAsset.nodeId,
+                displayName: matchedAmazonAsset.name,
+                settingsStore: amazonPhotosSettingsStore
+            )
+            if amazonSuccess {
+                removeDeletedAmazonAsset(nodeID: matchedAmazonAsset.nodeId)
+            }
+
+            let localSuccess = await syncController.deleteLocalAsset(
+                localIdentifier: localAsset.localIdentifier,
+                displayName: localAsset.originalFilename
+            )
+            if localSuccess {
+                removeDeletedLocalAsset(objectID: objectID)
+            }
+
+            if amazonSuccess && localSuccess {
+                syncController.statusIsError = false
+                syncController.statusMessage = "Deleted from Amazon and moved to iPhoto trash."
+            } else if !amazonSuccess && !localSuccess {
+                syncController.statusIsError = true
+                syncController.statusMessage = "Unable to delete from Amazon or iPhoto."
+            } else if !amazonSuccess {
+                syncController.statusIsError = true
+                syncController.statusMessage = "Deleted from iPhoto, but Amazon deletion failed."
+            } else {
+                syncController.statusIsError = true
+                syncController.statusMessage = "Deleted from Amazon, but iPhoto deletion failed."
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func metadataBlock(title: String, line1: String, line2: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Text(line1)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(line2)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadLocalThumbnail(for asset: LocalAsset) {
+        if localThumbnailCache[asset.objectID] != nil { return }
+        Task {
+            let image = await LocalPhotoLibraryBridge.thumbnailImage(localIdentifier: asset.localIdentifier)
+            guard let image else { return }
+            await MainActor.run {
+                localThumbnailCache[asset.objectID] = image
+            }
+        }
+    }
+
+    private func loadLocalFullImage(for asset: LocalAsset) {
+        if localFullCache[asset.objectID] != nil { return }
+        Task {
+            let image = await LocalPhotoLibraryBridge.fullImage(localIdentifier: asset.localIdentifier)
+            guard let image else { return }
+            await MainActor.run {
+                localFullCache[asset.objectID] = image
+            }
+        }
+    }
+
+    private func loadAmazonThumbnail(for asset: AmazonAsset) {
+        if amazonThumbnailCache[asset.objectID] != nil { return }
+        let config = amazonPhotosSettingsStore.syncConfig
+        let credentials = amazonPhotosSettingsStore.credentials
+        let fallbackOwnerID = amazonPhotosSettingsStore.lastValidatedOwnerID
+        Task {
+            let image = await AmazonMediaBridge.thumbnailImage(
+                for: asset,
+                config: config,
+                credentials: credentials,
+                fallbackOwnerID: fallbackOwnerID
+            )
+            guard let image else { return }
+            await MainActor.run {
+                amazonThumbnailCache[asset.objectID] = image
+            }
+        }
+    }
+
+    private func removeDeletedLocalAsset(objectID: NSManagedObjectID) {
+        localThumbnailCache.removeValue(forKey: objectID)
+        localFullCache.removeValue(forKey: objectID)
+
+        guard let asset = localAssets.first(where: { $0.objectID == objectID }) else {
+            selectedLocalObjectID = filteredLocalAssets.first?.objectID
+            return
+        }
+
+        let nextSelection = filteredLocalAssets.first(where: { $0.objectID != objectID })?.objectID
+        viewContext.delete(asset)
+
+        do {
+            try viewContext.save()
+            selectedLocalObjectID = nextSelection
+        } catch {
+            viewContext.rollback()
+            syncController.statusIsError = true
+            syncController.statusMessage = "iPhoto asset was deleted, but local index update failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func removeDeletedAmazonAsset(nodeID: String) {
+        guard let asset = amazonAssets.first(where: { $0.nodeId == nodeID }) else { return }
+        amazonThumbnailCache.removeValue(forKey: asset.objectID)
+        viewContext.delete(asset)
+
+        do {
+            try viewContext.save()
+        } catch {
+            viewContext.rollback()
+            syncController.statusIsError = true
+            syncController.statusMessage = "Amazon asset was deleted remotely, but local index update failed: \(error.localizedDescription)"
         }
     }
 
@@ -703,667 +788,517 @@ private struct PhotoLibraryGridWorkspaceView: View {
     }
 }
 
-private struct PhotoGridTile: View {
-    let localIdentifier: String
-    let creationDate: Date?
-    let isFavorite: Bool
-    let keepPreferred: Bool
-    let isSelected: Bool
-    let onTap: () -> Void
+private struct AmazonLibraryTabView: View {
+    @Environment(\.managedObjectContext) private var viewContext
+    @EnvironmentObject private var amazonPhotosSettingsStore: AmazonPhotosSettingsStore
+    @EnvironmentObject private var amazonPhotosIndexer: AmazonPhotosIndexer
+
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(key: "createdDate", ascending: false)],
+        animation: .default
+    )
+    private var amazonAssets: FetchedResults<AmazonAsset>
+
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(key: "creationDate", ascending: false)],
+        animation: .default
+    )
+    private var localAssets: FetchedResults<LocalAsset>
+
+    @StateObject private var syncController = LibrarySyncController()
+    @State private var selectedAmazonObjectID: NSManagedObjectID?
+    @State private var amazonThumbnailCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var amazonFullCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var localThumbnailCache: [NSManagedObjectID: NSImage] = [:]
+    @State private var pendingPermanentDeleteObjectID: NSManagedObjectID?
+    @State private var showPermanentDeleteConfirmation = false
+
+    private var selectedAmazon: AmazonAsset? {
+        if let selectedAmazonObjectID {
+            return amazonAssets.first(where: { $0.objectID == selectedAmazonObjectID }) ?? amazonAssets.first
+        }
+        return amazonAssets.first
+    }
+
+    private var matchedLocal: LocalAsset? {
+        guard let selectedAmazon else { return nil }
+        return AssetMatcher.matchLocal(for: selectedAmazon, among: Array(localAssets))
+    }
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    AssetThumbnailView(localIdentifier: localIdentifier, dimension: 150)
-                        .frame(maxWidth: .infinity, alignment: .center)
+        if amazonAssets.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                amazonSyncControls
 
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.white, .blue)
-                            .padding(8)
-                    }
-                }
-
-                Text(creationDate.map(Self.dateFormatter.string(from:)) ?? "Unknown date")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
-                    if isFavorite {
-                        Image(systemName: "heart.fill")
-                            .foregroundStyle(.pink)
-                    }
-                    if keepPreferred {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
-                    }
-                    Spacer()
-                }
-                .font(.caption)
+                EmptyStateView(
+                    title: "No Amazon Assets Indexed",
+                    message: "Use Sync Amazon Metadata or Refresh to run an on-demand sync from this tab."
+                )
             }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.15), lineWidth: isSelected ? 2 : 1)
-            )
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                amazonSyncControls
+
+                HStack(spacing: 0) {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                            ForEach(amazonAssets, id: \.objectID) { asset in
+                                Button {
+                                    selectedAmazonObjectID = asset.objectID
+                                    loadAmazonFullImage(for: asset)
+                                } label: {
+                                    LibraryTile(
+                                        image: amazonThumbnailCache[asset.objectID],
+                                        title: asset.name ?? asset.nodeId,
+                                        subtitle: DateFormatter.libraryDate(asset.contentDate ?? asset.createdDate),
+                                        isSelected: asset.objectID == selectedAmazon?.objectID
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                                .onAppear {
+                                    if selectedAmazonObjectID == nil {
+                                        selectedAmazonObjectID = asset.objectID
+                                    }
+                                    loadAmazonThumbnail(for: asset)
+                                }
+                            }
+                        }
+                        .padding(16)
+                    }
+                    .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Selected Amazon Asset")
+                            .font(.headline)
+
+                        if let selectedAmazon {
+                            DetailImageCard(
+                                image: amazonFullCache[selectedAmazon.objectID],
+                                placeholderText: "Loading full-size Amazon image…"
+                            )
+                            .frame(height: 280)
+                            .onAppear {
+                                loadAmazonFullImage(for: selectedAmazon)
+                            }
+
+                            metadataBlock(
+                                title: selectedAmazon.name ?? selectedAmazon.nodeId,
+                                line1: "Size: \(selectedAmazon.width)x\(selectedAmazon.height)",
+                                line2: "Date: \(DateFormatter.libraryDate(selectedAmazon.contentDate ?? selectedAmazon.createdDate))"
+                            )
+
+                            Divider()
+
+                            Text("Matched iPhoto Asset")
+                                .font(.headline)
+
+                            if let matchedLocal {
+                                DetailImageCard(
+                                    image: localThumbnailCache[matchedLocal.objectID],
+                                    placeholderText: "Loading iPhoto thumbnail…"
+                                )
+                                .frame(height: 170)
+                                .onAppear {
+                                    loadLocalThumbnail(for: matchedLocal)
+                                }
+
+                                metadataBlock(
+                                    title: matchedLocal.originalFilename ?? matchedLocal.localIdentifier,
+                                    line1: "Size: \(matchedLocal.pixelWidth)x\(matchedLocal.pixelHeight)",
+                                    line2: "Date: \(DateFormatter.libraryDate(matchedLocal.creationDate))"
+                                )
+                            } else {
+                                Text("No corresponding iPhoto asset found.")
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            HStack(spacing: 10) {
+                                Button("Sync This To iPhoto") {
+                                    Task {
+                                        await syncController.syncAmazonToLocal(
+                                            amazonAsset: selectedAmazon,
+                                            settingsStore: amazonPhotosSettingsStore
+                                        )
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(syncController.isSyncing || !amazonPhotosSettingsStore.hasCompleteCredentials)
+
+                                Button("Move To Amazon Trash", role: .destructive) {
+                                    let objectID = selectedAmazon.objectID
+                                    let nodeID = selectedAmazon.nodeId
+                                    let displayName = selectedAmazon.name
+                                    Task {
+                                        let success = await syncController.trashAmazonAsset(
+                                            nodeID: nodeID,
+                                            displayName: displayName,
+                                            settingsStore: amazonPhotosSettingsStore
+                                        )
+                                        if success {
+                                            await MainActor.run {
+                                                removeDeletedAmazonAsset(objectID: objectID)
+                                            }
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(syncController.isSyncing || !amazonPhotosSettingsStore.hasCompleteCredentials)
+
+                                Button("Delete Permanently", role: .destructive) {
+                                    pendingPermanentDeleteObjectID = selectedAmazon.objectID
+                                    showPermanentDeleteConfirmation = true
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(syncController.isSyncing || !amazonPhotosSettingsStore.hasCompleteCredentials)
+                            }
+                        } else {
+                            Text("Select an Amazon image.")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        SyncStatusView(controller: syncController)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(16)
+                    .frame(width: 430)
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                }
+                .onChange(of: selectedAmazonObjectID) { _ in
+                    guard let selectedAmazon else { return }
+                    loadAmazonFullImage(for: selectedAmazon)
+                    if let matchedLocal {
+                        loadLocalThumbnail(for: matchedLocal)
+                    }
+                }
+                .alert("Delete Permanently?", isPresented: $showPermanentDeleteConfirmation) {
+                    Button("Delete", role: .destructive) {
+                        guard let objectID = pendingPermanentDeleteObjectID else { return }
+                        guard let asset = amazonAssets.first(where: { $0.objectID == objectID }) else {
+                            syncController.statusIsError = true
+                            syncController.statusMessage = "Selected Amazon asset is no longer available."
+                            pendingPermanentDeleteObjectID = nil
+                            return
+                        }
+
+                        let nodeID = asset.nodeId
+                        let displayName = asset.name
+                        Task {
+                            let success = await syncController.deleteAmazonAsset(
+                                nodeID: nodeID,
+                                displayName: displayName,
+                                settingsStore: amazonPhotosSettingsStore
+                            )
+                            await MainActor.run {
+                                if success {
+                                    removeDeletedAmazonAsset(objectID: objectID)
+                                }
+                                pendingPermanentDeleteObjectID = nil
+                            }
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {
+                        pendingPermanentDeleteObjectID = nil
+                    }
+                } message: {
+                    Text("This action removes the file from Amazon Photos and cannot be undone.")
+                }
+            }
         }
-        .buttonStyle(.plain)
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-}
+    private var amazonSyncControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Button("Sync Amazon Metadata") {
+                    runAmazonSyncOrRefresh()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!amazonPhotosSettingsStore.hasCompleteCredentials)
 
-private enum ComparisonMode: String, CaseIterable, Identifiable {
-    case exact
-    case near
-    case similar
+                Button("Refresh") {
+                    runAmazonSyncOrRefresh()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!amazonPhotosSettingsStore.hasCompleteCredentials)
+            }
 
-    var id: String { rawValue }
+            AmazonIndexerStatusView(state: amazonPhotosIndexer.state)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
 
-    var title: String {
-        switch self {
-        case .exact:
-            return "Exact Duplicates"
-        case .near:
-            return "Near Duplicates"
-        case .similar:
-            return "Similar Search"
+    private func runAmazonSyncOrRefresh() {
+        amazonPhotosSettingsStore.save()
+        amazonPhotosIndexer.startIndexingIfNeeded(force: true)
+    }
+
+    @ViewBuilder
+    private func metadataBlock(title: String, line1: String, line2: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Text(line1)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(line2)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
-}
 
-@MainActor
-private final class ComparisonViewModel: ObservableObject {
-    @Published var mode: ComparisonMode = .exact
-    @Published var exactGroups: [ExactDuplicateGroup] = []
-    @Published var nearGroups: [NearDuplicateGroup] = []
-    @Published var similarMatches: [SimilarAssetMatch] = []
-    @Published var selectedIdentifier: String?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-    @Published var topK = 24
-    @Published var minimumLongestEdge = 0
-    @Published var lastYearOnly = false
-
-    private let persistenceController: PersistenceController
-    private let similaritySearchService: SimilaritySearchService
-
-    init(persistenceController: PersistenceController = .shared) {
-        self.persistenceController = persistenceController
-        self.similaritySearchService = SimilaritySearchService(persistenceController: persistenceController)
-    }
-
-    func refreshAll() async {
-        guard FeatureFlags.similarityFeaturesEnabled else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let options = SimilaritySearchOptions(
-                dateRange: nil,
-                minimumLongestEdge: nil,
-                sortOrder: .relevance,
-                pagination: SimilarityPagination(page: 0, pageSize: 300)
+    private func loadAmazonThumbnail(for asset: AmazonAsset) {
+        if amazonThumbnailCache[asset.objectID] != nil { return }
+        let config = amazonPhotosSettingsStore.syncConfig
+        let credentials = amazonPhotosSettingsStore.credentials
+        let fallbackOwnerID = amazonPhotosSettingsStore.lastValidatedOwnerID
+        Task {
+            let image = await AmazonMediaBridge.thumbnailImage(
+                for: asset,
+                config: config,
+                credentials: credentials,
+                fallbackOwnerID: fallbackOwnerID
             )
-            async let exact = similaritySearchService.findExactDuplicateGroups(options: options)
-            async let near = similaritySearchService.findNearDuplicateGroups(maxDistance: 6, options: options)
-            exactGroups = try await exact
-            nearGroups = try await near
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+            guard let image else { return }
+            await MainActor.run {
+                amazonThumbnailCache[asset.objectID] = image
+            }
         }
     }
 
-    func setSelectedIdentifier(_ identifier: String) {
-        selectedIdentifier = identifier
-        mode = .similar
+    private func loadAmazonFullImage(for asset: AmazonAsset) {
+        if amazonFullCache[asset.objectID] != nil { return }
+        let config = amazonPhotosSettingsStore.syncConfig
+        let credentials = amazonPhotosSettingsStore.credentials
+        let fallbackOwnerID = amazonPhotosSettingsStore.lastValidatedOwnerID
+        Task {
+            let image = await AmazonMediaBridge.fullImage(
+                for: asset,
+                config: config,
+                credentials: credentials,
+                fallbackOwnerID: fallbackOwnerID
+            )
+            guard let image else { return }
+            await MainActor.run {
+                amazonFullCache[asset.objectID] = image
+            }
+        }
     }
 
-    func runSimilaritySearch() async {
-        guard FeatureFlags.similarityFeaturesEnabled else { return }
-        guard let selectedIdentifier, !selectedIdentifier.isEmpty else {
-            similarMatches = []
+    private func loadLocalThumbnail(for asset: LocalAsset) {
+        if localThumbnailCache[asset.objectID] != nil { return }
+        Task {
+            let image = await LocalPhotoLibraryBridge.thumbnailImage(localIdentifier: asset.localIdentifier)
+            guard let image else { return }
+            await MainActor.run {
+                localThumbnailCache[asset.objectID] = image
+            }
+        }
+    }
+
+    private func removeDeletedAmazonAsset(objectID: NSManagedObjectID) {
+        amazonThumbnailCache.removeValue(forKey: objectID)
+        amazonFullCache.removeValue(forKey: objectID)
+
+        guard let asset = amazonAssets.first(where: { $0.objectID == objectID }) else {
+            selectedAmazonObjectID = amazonAssets.first?.objectID
             return
         }
 
-        isLoading = true
-        defer { isLoading = false }
+        let nextSelection = amazonAssets.first(where: { $0.objectID != objectID })?.objectID
+        viewContext.delete(asset)
 
         do {
-            var dateRange: ClosedRange<Date>?
-            if lastYearOnly {
-                let now = Date()
-                let lastYear = Calendar.current.date(byAdding: .year, value: -1, to: now) ?? now
-                dateRange = lastYear...now
-            }
-
-            let options = SimilaritySearchOptions(
-                dateRange: dateRange,
-                minimumLongestEdge: minimumLongestEdge > 0 ? minimumLongestEdge : nil,
-                sortOrder: .relevance,
-                pagination: SimilarityPagination(page: 0, pageSize: max(1, topK))
-            )
-            similarMatches = try await similaritySearchService.findSimilarAssets(
-                to: selectedIdentifier,
-                topK: topK,
-                options: options
-            )
-            errorMessage = nil
+            try viewContext.save()
+            selectedAmazonObjectID = nextSelection
         } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func toggleKeepPreferred(for localIdentifier: String) async {
-        do {
-            let backgroundContext = persistenceController.container.newBackgroundContext()
-            backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-            backgroundContext.automaticallyMergesChangesFromParent = false
-
-            try await backgroundContext.perform {
-                let request: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
-                request.fetchLimit = 1
-                request.predicate = NSPredicate(format: "localIdentifier == %@", localIdentifier)
-
-                guard let asset = try backgroundContext.fetch(request).first else { return }
-                asset.keepPreferred.toggle()
-                if backgroundContext.hasChanges {
-                    try backgroundContext.save()
-                    backgroundContext.reset()
-                }
-            }
-
-            await refreshAll()
-            if selectedIdentifier != nil {
-                await runSimilaritySearch()
-            }
-        } catch {
-            errorMessage = error.localizedDescription
+            viewContext.rollback()
+            syncController.statusIsError = true
+            syncController.statusMessage = "Amazon photo was deleted remotely, but local index update failed: \(error.localizedDescription)"
         }
     }
 }
 
-private struct ComparisonWorkspaceView: View {
-    @EnvironmentObject private var similarityIndexer: ExactDuplicateIndexer
-    @StateObject private var viewModel = ComparisonViewModel()
-    @State private var expandedExactGroupIDs: Set<String> = []
-    @State private var expandedNearGroupIDs: Set<String> = []
-    @State private var manualIdentifierInput = ""
+private struct ComparisonSectionView: View {
+    @EnvironmentObject private var comparisonViewModel: ComparisonViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Catalog Comparison")
-                        .font(.largeTitle)
-                        .bold()
-                    Text("Review exact duplicates, near-duplicate clusters, and visually similar photos.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if viewModel.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-
-                Button("Refresh") {
-                    Task {
-                        await viewModel.refreshAll()
-                        await viewModel.runSimilaritySearch()
-                    }
+        SectionContainer(
+            title: "Catalog Comparison",
+            message: "Duplicate and mismatch counts between iPhoto and Amazon Photos."
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                ComparisonSummaryCard(
+                    summary: comparisonViewModel.summary,
+                    isComputing: comparisonViewModel.isComputing,
+                    errorMessage: comparisonViewModel.errorMessage
+                )
+                Button("Recompute Comparison") {
+                    comparisonViewModel.refresh()
                 }
                 .buttonStyle(.borderedProminent)
             }
+        }
+    }
+}
 
-            if !FeatureFlags.similarityFeaturesEnabled {
-                Text("Similarity features are currently disabled. Set `feature.similarity.enabled` in `UserDefaults` to enable indexing and search.")
-                    .font(.callout)
+private struct TransferQueuePlaceholder: View {
+    var body: some View {
+        SectionContainer(
+            title: "Transfer Queue",
+            message: "Queued and historical sync operations appear here."
+        ) {
+            Text("Queue details will be added in the next iteration.")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SettingsSectionView: View {
+    @EnvironmentObject private var amazonPhotosSettingsStore: AmazonPhotosSettingsStore
+    @EnvironmentObject private var amazonPhotosIndexer: AmazonPhotosIndexer
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Settings")
+                    .font(.largeTitle)
+                    .bold()
+                Text("Configure Amazon Photos cookies and sync parameters used for metadata indexing.")
                     .foregroundStyle(.secondary)
-                Spacer()
-            } else {
-                Picker("Comparison Mode", selection: $viewModel.mode) {
-                    ForEach(ComparisonMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+
+                GroupBox("Amazon Cookie Credentials") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LabeledField(label: "Session ID") {
+                            SecureField("session-id", text: $amazonPhotosSettingsStore.sessionID)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "Ubid Cookie Key") {
+                            TextField("ubid_main or ubid-acbca", text: $amazonPhotosSettingsStore.ubidCookieKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "Ubid Cookie Value") {
+                            SecureField("cookie value", text: $amazonPhotosSettingsStore.ubidCookieValue)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "At Cookie Key") {
+                            TextField("at_main or at-acbca", text: $amazonPhotosSettingsStore.atCookieKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "At Cookie Value") {
+                            SecureField("cookie value", text: $amazonPhotosSettingsStore.atCookieValue)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(.callout)
-                        .foregroundStyle(.red)
+                    .padding(.top, 8)
                 }
 
-                switch viewModel.mode {
-                case .exact:
-                    exactGroupsView
-                case .near:
-                    nearGroupsView
-                case .similar:
-                    similarSearchView
-                }
-            }
-        }
-        .padding(24)
-        .task {
-            await viewModel.refreshAll()
-        }
-        .onChange(of: similarityIndexer.state) { newState in
-            if case .completed = newState {
-                Task {
-                    await viewModel.refreshAll()
-                    await viewModel.runSimilaritySearch()
-                }
-            }
-        }
-    }
-
-    private var exactGroupsView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if viewModel.exactGroups.isEmpty {
-                    Text("No exact duplicate groups were found in the indexed library.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(viewModel.exactGroups) { group in
-                    ExactGroupCard(
-                        group: group,
-                        isExpanded: binding(for: group.id, in: $expandedExactGroupIDs),
-                        onFindSimilar: { identifier in
-                            viewModel.setSelectedIdentifier(identifier)
-                            manualIdentifierInput = identifier
-                            Task { await viewModel.runSimilaritySearch() }
-                        },
-                        onToggleKeep: { identifier in
-                            Task { await viewModel.toggleKeepPreferred(for: identifier) }
+                GroupBox("Amazon Sync Parameters") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        LabeledField(label: "Region") {
+                            Picker("Region", selection: $amazonPhotosSettingsStore.regionMode) {
+                                ForEach(AmazonRegionMode.allCases) { mode in
+                                    Text(mode.title).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.menu)
                         }
-                    )
-                }
-            }
-        }
-    }
-
-    private var nearGroupsView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                if viewModel.nearGroups.isEmpty {
-                    Text("No near-duplicate clusters were found at the current Hamming distance threshold.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(viewModel.nearGroups) { group in
-                    NearGroupCard(
-                        group: group,
-                        isExpanded: binding(for: group.id, in: $expandedNearGroupIDs),
-                        onFindSimilar: { identifier in
-                            viewModel.setSelectedIdentifier(identifier)
-                            manualIdentifierInput = identifier
-                            Task { await viewModel.runSimilaritySearch() }
-                        },
-                        onToggleKeep: { identifier in
-                            Task { await viewModel.toggleKeepPreferred(for: identifier) }
+                        LabeledField(label: "TLD Override") {
+                            TextField("Optional (e.g. com, ca, it)", text: $amazonPhotosSettingsStore.amazonTLDOverride)
+                                .textFieldStyle(.roundedBorder)
                         }
-                    )
+                        LabeledField(label: "Search Filter") {
+                            TextField("type:(PHOTOS OR VIDEOS)", text: $amazonPhotosSettingsStore.searchFilter)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "Sort") {
+                            TextField("['createdDate DESC']", text: $amazonPhotosSettingsStore.searchSort)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledField(label: "Search Context") {
+                            TextField("customer", text: $amazonPhotosSettingsStore.searchContext)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        Toggle("Low Resolution Thumbnails", isOn: $amazonPhotosSettingsStore.lowResThumbnail)
+
+                        HStack(spacing: 24) {
+                            LabeledNumericField(label: "Page Limit", value: $amazonPhotosSettingsStore.pageLimit)
+                            LabeledNumericField(label: "Max Pages", value: $amazonPhotosSettingsStore.maxPages)
+                            LabeledNumericField(label: "Max Retries", value: $amazonPhotosSettingsStore.maxRetryCount)
+                        }
+
+                        HStack {
+                            Text("Timeout Seconds")
+                            TextField(
+                                "30",
+                                value: $amazonPhotosSettingsStore.requestTimeoutSeconds,
+                                format: .number.precision(.fractionLength(0 ... 1))
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                        }
+                    }
+                    .padding(.top, 8)
                 }
-            }
-        }
-    }
 
-    private var similarSearchView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                TextField("Local identifier", text: $manualIdentifierInput)
-                    .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        Button("Save Settings") {
+                            amazonPhotosSettingsStore.save()
+                        }
+                        .buttonStyle(.borderedProminent)
 
-                Button("Set Seed") {
-                    let trimmed = manualIdentifierInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    viewModel.setSelectedIdentifier(trimmed)
-                    Task { await viewModel.runSimilaritySearch() }
-                }
-                .buttonStyle(.bordered)
-            }
+                        Button("Validate Connection") {
+                            Task {
+                                await amazonPhotosSettingsStore.validateConnection()
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!amazonPhotosSettingsStore.hasCompleteCredentials)
 
-            HStack(spacing: 18) {
-                Stepper("Top K: \(viewModel.topK)", value: $viewModel.topK, in: 5...100, step: 1)
-                Stepper("Min edge: \(viewModel.minimumLongestEdge)", value: $viewModel.minimumLongestEdge, in: 0...5000, step: 250)
-                Toggle("Last 12 months", isOn: $viewModel.lastYearOnly)
-                    .toggleStyle(.checkbox)
-                Button("Run Similarity Search") {
-                    Task { await viewModel.runSimilaritySearch() }
-                }
-                .buttonStyle(.borderedProminent)
-            }
+                        Button("Sync Amazon Now") {
+                            amazonPhotosSettingsStore.save()
+                            amazonPhotosIndexer.startIndexingIfNeeded(force: true)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!amazonPhotosSettingsStore.hasCompleteCredentials)
+                    }
 
-            if let selectedIdentifier = viewModel.selectedIdentifier {
-                HStack(spacing: 10) {
-                    AssetThumbnailView(localIdentifier: selectedIdentifier, dimension: 56)
-                    Text("Seed: \(selectedIdentifier)")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("Select a seed asset from exact/near groups, or set one manually.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
+                    Text(amazonPhotosSettingsStore.authState.title)
+                        .font(.headline)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if viewModel.similarMatches.isEmpty {
-                        Text("No similarity matches yet.")
+                    if !amazonPhotosSettingsStore.lastValidationMessage.isEmpty {
+                        Text(amazonPhotosSettingsStore.lastValidationMessage)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
 
-                    ForEach(viewModel.similarMatches) { match in
-                        ComparisonAssetRow(
-                            localIdentifier: match.localIdentifier,
-                            keepPreferred: match.keepPreferred,
-                            detailText: "Distance: \(Self.formatDistance(Double(match.distance))) • Score: \(Self.formatDistance(match.score))",
-                            trailingText: match.creationDate.map(Self.dateFormatter.string(from:)) ?? "Unknown date",
-                            onFindSimilar: {
-                                viewModel.setSelectedIdentifier(match.localIdentifier)
-                                manualIdentifierInput = match.localIdentifier
-                                Task { await viewModel.runSimilaritySearch() }
-                            },
-                            onToggleKeep: {
-                                Task { await viewModel.toggleKeepPreferred(for: match.localIdentifier) }
-                            }
-                        )
+                    if let lastSuccessfulSyncAt = amazonPhotosSettingsStore.lastSuccessfulSyncAt {
+                        Text("Last successful sync: \(lastSuccessfulSyncAt.formatted(date: .abbreviated, time: .standard))")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let lastSyncError = amazonPhotosSettingsStore.lastSyncError {
+                        Text("Last sync error: \(lastSyncError)")
+                            .font(.callout)
+                            .foregroundStyle(.red)
                     }
                 }
             }
-        }
-    }
-
-    private func binding(for key: String, in set: Binding<Set<String>>) -> Binding<Bool> {
-        Binding(
-            get: { set.wrappedValue.contains(key) },
-            set: { isExpanded in
-                if isExpanded {
-                    set.wrappedValue.insert(key)
-                } else {
-                    set.wrappedValue.remove(key)
-                }
-            }
-        )
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-
-    private static func formatDistance(_ value: Double) -> String {
-        String(format: "%.3f", value)
-    }
-}
-
-private struct ComparisonAssetRow: View {
-    let localIdentifier: String
-    let keepPreferred: Bool
-    let detailText: String
-    let trailingText: String
-    let onFindSimilar: () -> Void
-    let onToggleKeep: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AssetThumbnailView(localIdentifier: localIdentifier, dimension: 56)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(localIdentifier)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(detailText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(trailingText)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer()
-
-            Button(action: onFindSimilar) {
-                Label("Similar", systemImage: "sparkle.magnifyingglass")
-            }
-            .buttonStyle(.bordered)
-
-            Button(action: onToggleKeep) {
-                Image(systemName: keepPreferred ? "star.fill" : "star")
-            }
-            .buttonStyle(.borderless)
-            .help(keepPreferred ? "Unset preferred keep candidate" : "Mark preferred keep candidate")
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
-        )
-    }
-}
-
-private struct ExactGroupCard: View {
-    let group: ExactDuplicateGroup
-    @Binding var isExpanded: Bool
-    let onFindSimilar: (String) -> Void
-    let onToggleKeep: (String) -> Void
-
-    var body: some View {
-        DisclosureGroup(
-            isExpanded: $isExpanded,
-            content: {
-                VStack(spacing: 10) {
-                    ForEach(group.assets) { asset in
-                        ComparisonAssetRow(
-                            localIdentifier: asset.localIdentifier,
-                            keepPreferred: asset.keepPreferred,
-                            detailText: "\(asset.pixelWidth)×\(asset.pixelHeight)",
-                            trailingText: asset.creationDate.map(Self.dateFormatter.string(from:)) ?? "Unknown date",
-                            onFindSimilar: { onFindSimilar(asset.localIdentifier) },
-                            onToggleKeep: { onToggleKeep(asset.localIdentifier) }
-                        )
-                    }
-                }
-                .padding(.top, 8)
-            },
-            label: {
-                HStack {
-                    Text("Hash \(group.contentHash.prefix(12))…")
-                        .font(.headline)
-                    Spacer()
-                    Text("\(group.assetCount.formatted()) assets")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        )
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.thinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.secondary.opacity(0.18))
-        )
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-}
-
-private struct NearGroupCard: View {
-    let group: NearDuplicateGroup
-    @Binding var isExpanded: Bool
-    let onFindSimilar: (String) -> Void
-    let onToggleKeep: (String) -> Void
-
-    var body: some View {
-        DisclosureGroup(
-            isExpanded: $isExpanded,
-            content: {
-                VStack(spacing: 10) {
-                    ForEach(group.assets) { asset in
-                        ComparisonAssetRow(
-                            localIdentifier: asset.localIdentifier,
-                            keepPreferred: asset.keepPreferred,
-                            detailText: "Distance: \(asset.hammingDistanceFromSeed) • Confidence: \(Self.formatPercent(asset.confidence))",
-                            trailingText: asset.creationDate.map(Self.dateFormatter.string(from:)) ?? "Unknown date",
-                            onFindSimilar: { onFindSimilar(asset.localIdentifier) },
-                            onToggleKeep: { onToggleKeep(asset.localIdentifier) }
-                        )
-                    }
-                }
-                .padding(.top, 8)
-            },
-            label: {
-                HStack {
-                    Text("Seed \(group.seedIdentifier)")
-                        .font(.headline)
-                    Spacer()
-                    Text("Avg distance \(Self.formatAverage(group.averageDistance))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("• \(group.assetCount.formatted()) assets")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        )
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.thinMaterial)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.secondary.opacity(0.18))
-        )
-    }
-
-    private static func formatAverage(_ value: Double) -> String {
-        String(format: "%.2f", value)
-    }
-
-    private static func formatPercent(_ value: Double) -> String {
-        String(format: "%.0f%%", value * 100)
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter
-    }()
-}
-
-private struct AssetThumbnailView: View {
-    let localIdentifier: String
-    let dimension: CGFloat
-    @State private var image: NSImage?
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.15))
-                    .overlay(
-                        Image(systemName: "photo")
-                            .foregroundStyle(.tertiary)
-                    )
-            }
-        }
-        .frame(width: dimension, height: dimension)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.secondary.opacity(0.2))
-        )
-        .task(id: localIdentifier) {
-            image = await Self.loadThumbnail(localIdentifier: localIdentifier, dimension: dimension)
-        }
-    }
-
-    private static func loadThumbnail(localIdentifier: String, dimension: CGFloat) async -> NSImage? {
-        await withCheckedContinuation { continuation in
-            let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-            guard let asset = result.firstObject else {
-                continuation.resume(returning: nil)
-                return
-            }
-
-            let options = PHImageRequestOptions()
-            options.isSynchronous = false
-            options.isNetworkAccessAllowed = true
-            options.deliveryMode = .opportunistic
-            options.resizeMode = .fast
-
-            let manager = PHCachingImageManager()
-            let lock = NSLock()
-            var resumed = false
-            _ = manager.requestImage(
-                for: asset,
-                targetSize: CGSize(width: dimension * 2, height: dimension * 2),
-                contentMode: .aspectFill,
-                options: options
-            ) { image, info in
-                lock.lock()
-                defer { lock.unlock() }
-                if resumed {
-                    return
-                }
-                if let degraded = info?[PHImageResultIsDegradedKey] as? Bool, degraded {
-                    return
-                }
-                resumed = true
-                continuation.resume(returning: image)
-            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-private struct ContentPlaceholder<Accessory: View>: View {
+private struct SectionContainer<Content: View>: View {
     let title: String
     let message: String
-    @ViewBuilder let accessory: () -> Accessory
-
-    init(title: String, message: String, accessory: @escaping () -> Accessory = { EmptyView() }) {
-        self.title = title
-        self.message = message
-        self.accessory = accessory
-    }
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1377,22 +1312,189 @@ private struct ContentPlaceholder<Accessory: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            accessory()
-
-            Spacer()
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Upcoming Implementation")
-                    .font(.headline)
-                Text("This section will connect to live data sources, Combine publishers, and progress indicators in subsequent milestones.")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            content()
+            Spacer(minLength: 0)
         }
         .padding(32)
+    }
+}
+
+private struct ComparisonSummaryCard: View {
+    let summary: ComparisonSummary
+    let isComputing: Bool
+    let errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Comparison Summary")
+                .font(.headline)
+
+            if isComputing {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Computing comparison…")
+                        .foregroundStyle(.secondary)
+                }
+            } else if let errorMessage {
+                Text(errorMessage)
+                    .foregroundStyle(.red)
+            } else if summary.computedAt == .distantPast {
+                Text("No comparison computed yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("iPhoto assets: \(summary.totalLocal.formatted())")
+                    Text("Amazon assets: \(summary.totalAmazon.formatted())")
+                    Text("Exact duplicates: \(summary.exactDuplicates.formatted())")
+                    Text("Likely duplicates: \(summary.likelyDuplicates.formatted())")
+                    Text("iPhoto only: \(summary.localOnly.formatted())")
+                    Text("Amazon only: \(summary.amazonOnly.formatted())")
+                    Text("Updated \(summary.computedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.25))
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .foregroundStyle(.thinMaterial)
+                )
+        )
+    }
+}
+
+private struct LibraryTile: View {
+    let image: NSImage?
+    let title: String
+    let subtitle: String
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.secondary.opacity(0.12))
+
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                } else {
+                    Image(systemName: "photo")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(height: 130)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
+            )
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06))
+        )
+    }
+}
+
+private struct DetailImageCard: View {
+    let image: NSImage?
+    let placeholderText: String
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(6)
+            } else {
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text(placeholderText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+private struct SyncStatusView: View {
+    @ObservedObject var controller: LibrarySyncController
+
+    var body: some View {
+        if !controller.statusMessage.isEmpty {
+            Text(controller.statusMessage)
+                .font(.callout)
+                .foregroundStyle(controller.statusIsError ? .red : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct EmptyStateView: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+            Text(message)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct LabeledField<Field: View>: View {
+    let label: String
+    @ViewBuilder let field: () -> Field
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .frame(width: 160, alignment: .leading)
+            field()
+        }
+    }
+}
+
+private struct LabeledNumericField: View {
+    let label: String
+    @Binding var value: Int
+
+    var body: some View {
+        HStack {
+            Text(label)
+            TextField(label, value: $value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 80)
+        }
     }
 }
 
@@ -1401,8 +1503,10 @@ private struct ContentPlaceholder<Accessory: View>: View {
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(PhotoLibraryAuthorizationController.previewAuthorized)
         .environmentObject(PhotoLibraryIndexer.previewCompleted)
-        .environmentObject(ExactDuplicateIndexer.previewCompleted)
-        .frame(width: 960, height: 600)
+        .environmentObject(AmazonPhotosSettingsStore())
+        .environmentObject(AmazonPhotosIndexer.previewIdle)
+        .environmentObject(ComparisonViewModel.preview)
+        .frame(width: 1200, height: 760)
 }
 
 #Preview("Denied") {
@@ -1410,8 +1514,10 @@ private struct ContentPlaceholder<Accessory: View>: View {
         .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         .environmentObject(PhotoLibraryAuthorizationController.previewDenied)
         .environmentObject(PhotoLibraryIndexer.previewIdle)
-        .environmentObject(ExactDuplicateIndexer.previewIdle)
-        .frame(width: 960, height: 600)
+        .environmentObject(AmazonPhotosSettingsStore())
+        .environmentObject(AmazonPhotosIndexer.previewIdle)
+        .environmentObject(ComparisonViewModel.preview)
+        .frame(width: 1200, height: 760)
 }
 
 private struct AuthorizationOverlayView: View {
@@ -1474,12 +1580,12 @@ private struct IndexerStatusView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Local Library Index")
+            Text("iPhoto Library Index")
                 .font(.headline)
 
             switch state {
             case .idle:
-                Text("Indexing will begin automatically once photo library access is granted.")
+                Text("Indexing begins automatically after photo library access is granted.")
                     .foregroundStyle(.secondary)
             case .indexing(let progress):
                 VStack(alignment: .leading, spacing: 8) {
@@ -1517,49 +1623,35 @@ private struct IndexerStatusView: View {
     }
 }
 
-private struct DuplicateIndexerStatusView: View {
-    let state: ExactDuplicateIndexer.State
+private struct AmazonIndexerStatusView: View {
+    let state: AmazonPhotosIndexer.State
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Exact Duplicate Index")
+            Text("Amazon Photos Index")
                 .font(.headline)
 
             switch state {
             case .idle:
-                Text("Duplicate hashing will run after local metadata indexing completes.")
+                Text("Run sync to index Amazon metadata for comparison.")
                     .foregroundStyle(.secondary)
             case .indexing(let progress):
                 VStack(alignment: .leading, spacing: 8) {
                     ProgressView(value: progress.fractionComplete)
-                    Text("Hashing \(progress.processed.formatted()) of \(progress.total.formatted()) assets…")
+                    Text("Indexing \(progress.processed.formatted()) of \(progress.total.formatted()) Amazon assets…")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("Exact: \(progress.exactComputed.formatted()) • Near: \(progress.perceptualComputed.formatted()) • Semantic: \(progress.semanticComputed.formatted())")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Text("Failed: \(progress.failed.formatted())")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                 }
             case .completed(let completion):
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Exact hashes: \(completion.exactComputed.formatted())")
-                    Text("Near hashes: \(completion.perceptualComputed.formatted()) • Semantic vectors: \(completion.semanticComputed.formatted())")
-                        .font(.callout)
-                    Text("Exact groups: \(completion.summary.exactSummary.duplicateGroupCount.formatted()) • Near groups: \(completion.summary.nearSummary.duplicateGroupCount.formatted())")
+                    Text("Indexed \(completion.processed.formatted()) Amazon assets")
+                    Text("Last run \(completion.completedAt, style: .relative)")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("Retry queue: \(completion.retryQueueCount.formatted()) • Failed: \(completion.failed.formatted())")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Text("Last run \(completion.completedAt, style: .relative)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                 }
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Duplicate indexing failed")
+                    Text("Amazon indexing failed")
                         .foregroundStyle(.red)
                     Text(message)
                         .font(.callout)
@@ -1576,5 +1668,477 @@ private struct DuplicateIndexerStatusView: View {
                         .foregroundStyle(.thinMaterial)
                 )
         )
+    }
+}
+
+@MainActor
+private final class LibrarySyncController: ObservableObject {
+    @Published var isSyncing = false
+    @Published var statusMessage: String = ""
+    @Published var statusIsError = false
+
+    func syncLocalToAmazon(localAsset: LocalAsset, settingsStore: AmazonPhotosSettingsStore) async {
+        guard settingsStore.hasCompleteCredentials else {
+            statusIsError = true
+            statusMessage = "Amazon credentials are incomplete."
+            return
+        }
+
+        isSyncing = true
+        statusIsError = false
+        statusMessage = "Preparing local asset upload…"
+
+        defer { isSyncing = false }
+
+        do {
+            let (data, fileName) = try await LocalPhotoLibraryBridge.exportResourceData(localIdentifier: localAsset.localIdentifier)
+            let client = try AmazonPhotosClient(config: settingsStore.syncConfig, credentials: settingsStore.credentials)
+            let root = try await client.validateConnection()
+            try await client.uploadFile(data: data, fileName: fileName, parentNodeID: root.id)
+            statusIsError = false
+            statusMessage = "Uploaded \(fileName) to Amazon Photos."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func syncAmazonToLocal(amazonAsset: AmazonAsset, settingsStore: AmazonPhotosSettingsStore) async {
+        guard settingsStore.hasCompleteCredentials else {
+            statusIsError = true
+            statusMessage = "Amazon credentials are incomplete."
+            return
+        }
+
+        guard let ownerID = amazonAsset.ownerId ?? settingsStore.lastValidatedOwnerID else {
+            statusIsError = true
+            statusMessage = "Owner ID unavailable. Validate Amazon connection again."
+            return
+        }
+
+        isSyncing = true
+        statusIsError = false
+        statusMessage = "Downloading from Amazon Photos…"
+
+        defer { isSyncing = false }
+
+        do {
+            let client = try AmazonPhotosClient(config: settingsStore.syncConfig, credentials: settingsStore.credentials)
+            let data = try await client.fetchFullSize(nodeID: amazonAsset.nodeId, ownerID: ownerID)
+            let fileName = amazonAsset.name ?? "\(amazonAsset.nodeId).\(amazonAsset.extensionName ?? "jpg")"
+            let tempURL = try TemporaryFileStore.write(data: data, suggestedFileName: fileName)
+            try await LocalPhotoLibraryBridge.importFile(at: tempURL)
+            statusIsError = false
+            statusMessage = "Imported \(fileName) into iPhoto."
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func trashAmazonAsset(nodeID: String, displayName: String?, settingsStore: AmazonPhotosSettingsStore) async -> Bool {
+        guard settingsStore.hasCompleteCredentials else {
+            statusIsError = true
+            statusMessage = "Amazon credentials are incomplete."
+            return false
+        }
+
+        isSyncing = true
+        statusIsError = false
+        statusMessage = "Moving Amazon photo to trash…"
+
+        defer { isSyncing = false }
+
+        do {
+            let client = try AmazonPhotosClient(config: settingsStore.syncConfig, credentials: settingsStore.credentials)
+            try await client.trash(nodeIDs: [nodeID])
+            statusIsError = false
+            statusMessage = "Moved \(displayName ?? nodeID) to Amazon trash."
+            return true
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteAmazonAsset(nodeID: String, displayName: String?, settingsStore: AmazonPhotosSettingsStore) async -> Bool {
+        guard settingsStore.hasCompleteCredentials else {
+            statusIsError = true
+            statusMessage = "Amazon credentials are incomplete."
+            return false
+        }
+
+        isSyncing = true
+        statusIsError = false
+        statusMessage = "Permanently deleting Amazon photo…"
+
+        defer { isSyncing = false }
+
+        do {
+            let client = try AmazonPhotosClient(config: settingsStore.syncConfig, credentials: settingsStore.credentials)
+            try await client.delete(nodeIDs: [nodeID])
+            statusIsError = false
+            statusMessage = "Permanently deleted \(displayName ?? nodeID) from Amazon."
+            return true
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func deleteLocalAsset(localIdentifier: String, displayName: String?) async -> Bool {
+        isSyncing = true
+        statusIsError = false
+        statusMessage = "Moving iPhoto asset to trash…"
+
+        defer { isSyncing = false }
+
+        do {
+            try await LocalPhotoLibraryBridge.deleteAsset(localIdentifier: localIdentifier)
+            statusIsError = false
+            statusMessage = "Moved \(displayName ?? localIdentifier) to iPhoto trash."
+            return true
+        } catch {
+            statusIsError = true
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
+}
+
+private enum LocalPhotoLibraryBridge {
+    @MainActor
+    static func thumbnailImage(localIdentifier: String, targetPixels: CGFloat = 280) async -> NSImage? {
+        await requestImage(localIdentifier: localIdentifier, targetSize: CGSize(width: targetPixels, height: targetPixels))
+    }
+
+    @MainActor
+    static func fullImage(localIdentifier: String, targetPixels: CGFloat = 2200) async -> NSImage? {
+        await requestImage(localIdentifier: localIdentifier, targetSize: CGSize(width: targetPixels, height: targetPixels))
+    }
+
+    @MainActor
+    static func exportResourceData(localIdentifier: String) async throws -> (Data, String) {
+        guard let asset = fetchAsset(localIdentifier: localIdentifier) else {
+            throw NSError(domain: "PhotoSyncCompanion", code: 101, userInfo: [NSLocalizedDescriptionKey: "Local photo not found."])
+        }
+
+        let resources = PHAssetResource.assetResources(for: asset)
+        guard let resource = preferredResource(from: resources) else {
+            throw NSError(domain: "PhotoSyncCompanion", code: 102, userInfo: [NSLocalizedDescriptionKey: "No exportable resource found for selected photo."])
+        }
+
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+
+        return try await withCheckedThrowingContinuation { continuation in
+            var output = Data()
+            PHAssetResourceManager.default().requestData(
+                for: resource,
+                options: options
+            ) { chunk in
+                output.append(chunk)
+            } completionHandler: { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                let fallbackFileName = "photo-\(UUID().uuidString).jpg"
+                continuation.resume(returning: (output, resource.originalFilename.isEmpty ? fallbackFileName : resource.originalFilename))
+            }
+        }
+    }
+
+    @MainActor
+    static func importFile(at fileURL: URL) async throws {
+        let resourceType = mediaResourceType(for: fileURL)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: resourceType, fileURL: fileURL, options: nil)
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "PhotoSyncCompanion",
+                        code: 103,
+                        userInfo: [NSLocalizedDescriptionKey: "Unknown iPhoto import error."]
+                    ))
+                }
+            }
+        }
+    }
+
+    @MainActor
+    static func deleteAsset(localIdentifier: String) async throws {
+        guard let asset = fetchAsset(localIdentifier: localIdentifier) else {
+            throw NSError(
+                domain: "PhotoSyncCompanion",
+                code: 104,
+                userInfo: [NSLocalizedDescriptionKey: "iPhoto asset not found."]
+            )
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets([asset] as NSArray)
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "PhotoSyncCompanion",
+                        code: 105,
+                        userInfo: [NSLocalizedDescriptionKey: "Unknown iPhoto delete error."]
+                    ))
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private static func requestImage(localIdentifier: String, targetSize: CGSize) async -> NSImage? {
+        guard let asset = fetchAsset(localIdentifier: localIdentifier) else { return nil }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .exact
+        options.isNetworkAccessAllowed = true
+
+        return await withCheckedContinuation { continuation in
+            var resumed = false
+            PHImageManager.default().requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: .aspectFit,
+                options: options
+            ) { image, info in
+                if resumed { return }
+                if (info?[PHImageCancelledKey] as? Bool) == true {
+                    resumed = true
+                    continuation.resume(returning: nil)
+                    return
+                }
+                if info?[PHImageErrorKey] != nil {
+                    resumed = true
+                    continuation.resume(returning: nil)
+                    return
+                }
+                if (info?[PHImageResultIsDegradedKey] as? Bool) == true {
+                    return
+                }
+                resumed = true
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    @MainActor
+    private static func fetchAsset(localIdentifier: String) -> PHAsset? {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        return result.firstObject
+    }
+
+    private static func preferredResource(from resources: [PHAssetResource]) -> PHAssetResource? {
+        let preferredOrder: [PHAssetResourceType] = [
+            .fullSizePhoto,
+            .photo,
+            .fullSizeVideo,
+            .video
+        ]
+        for type in preferredOrder {
+            if let resource = resources.first(where: { $0.type == type }) {
+                return resource
+            }
+        }
+        return resources.first
+    }
+
+    private static func mediaResourceType(for fileURL: URL) -> PHAssetResourceType {
+        let videoExtensions: Set<String> = ["mov", "mp4", "m4v", "avi", "mkv"]
+        let ext = fileURL.pathExtension.lowercased()
+        return videoExtensions.contains(ext) ? .video : .photo
+    }
+}
+
+private enum AmazonMediaBridge {
+    static func thumbnailImage(
+        for asset: AmazonAsset,
+        config: AmazonPhotosConfig,
+        credentials: AmazonPhotosCredentials,
+        fallbackOwnerID: String?,
+        targetPixels: Int = 360
+    ) async -> NSImage? {
+        guard credentials.isComplete else { return nil }
+        guard let ownerID = asset.ownerId ?? fallbackOwnerID else { return nil }
+        do {
+            let client = try AmazonPhotosClient(config: config, credentials: credentials)
+            let data = try await client.fetchThumbnail(nodeID: asset.nodeId, ownerID: ownerID, viewBox: targetPixels)
+            return NSImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+
+    static func fullImage(
+        for asset: AmazonAsset,
+        config: AmazonPhotosConfig,
+        credentials: AmazonPhotosCredentials,
+        fallbackOwnerID: String?
+    ) async -> NSImage? {
+        guard credentials.isComplete else { return nil }
+        guard let ownerID = asset.ownerId ?? fallbackOwnerID else { return nil }
+        do {
+            let client = try AmazonPhotosClient(config: config, credentials: credentials)
+            let data = try await client.fetchFullSize(nodeID: asset.nodeId, ownerID: ownerID)
+            return NSImage(data: data)
+        } catch {
+            return nil
+        }
+    }
+}
+
+private enum AssetMatcher {
+    static func matchAmazon(for local: LocalAsset, among amazonAssets: [AmazonAsset]) -> AmazonAsset? {
+        if let localMD5 = normalized(local.md5) {
+            if let exact = amazonAssets.first(where: { normalized($0.md5) == localMD5 }) {
+                return exact
+            }
+        }
+
+        let localName = normalizedFileName(local.originalFilename)
+        let localDate = local.creationDate
+        let localSize = local.fileSizeBytes > 0 ? local.fileSizeBytes : nil
+
+        let candidates = amazonAssets.filter { amazon in
+            if local.pixelWidth > 0, local.pixelHeight > 0, amazon.width > 0, amazon.height > 0 {
+                if local.pixelWidth != amazon.width || local.pixelHeight != amazon.height {
+                    return false
+                }
+            }
+
+            if let localName, let amazonName = normalizedFileName(amazon.name), localName != amazonName {
+                return false
+            }
+
+            if let localDate {
+                let amazonDate = amazon.contentDate ?? amazon.createdDate
+                if let amazonDate, abs(localDate.timeIntervalSince(amazonDate)) > 300 {
+                    return false
+                }
+            }
+
+            if let localSize, amazon.sizeBytes > 0 {
+                let delta = abs(amazon.sizeBytes - localSize)
+                if delta > 8_192 {
+                    return false
+                }
+            }
+
+            return true
+        }
+
+        return candidates.min(by: { lhs, rhs in
+            dateDistance(lhs.contentDate ?? lhs.createdDate, localDate) < dateDistance(rhs.contentDate ?? rhs.createdDate, localDate)
+        })
+    }
+
+    static func matchLocal(for amazon: AmazonAsset, among localAssets: [LocalAsset]) -> LocalAsset? {
+        if let amazonMD5 = normalized(amazon.md5) {
+            if let exact = localAssets.first(where: { normalized($0.md5) == amazonMD5 }) {
+                return exact
+            }
+        }
+
+        let amazonName = normalizedFileName(amazon.name)
+        let amazonDate = amazon.contentDate ?? amazon.createdDate
+        let amazonSize = amazon.sizeBytes > 0 ? amazon.sizeBytes : nil
+
+        let candidates = localAssets.filter { local in
+            if amazon.width > 0, amazon.height > 0, local.pixelWidth > 0, local.pixelHeight > 0 {
+                if amazon.width != local.pixelWidth || amazon.height != local.pixelHeight {
+                    return false
+                }
+            }
+
+            if let amazonName, let localName = normalizedFileName(local.originalFilename), amazonName != localName {
+                return false
+            }
+
+            if let amazonDate, let localDate = local.creationDate {
+                if abs(amazonDate.timeIntervalSince(localDate)) > 300 {
+                    return false
+                }
+            }
+
+            if let amazonSize, local.fileSizeBytes > 0 {
+                let delta = abs(amazonSize - local.fileSizeBytes)
+                if delta > 8_192 {
+                    return false
+                }
+            }
+
+            return true
+        }
+
+        return candidates.min(by: { lhs, rhs in
+            dateDistance(lhs.creationDate, amazonDate) < dateDistance(rhs.creationDate, amazonDate)
+        })
+    }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value.lowercased()
+    }
+
+    private static func normalizedFileName(_ value: String?) -> String? {
+        guard let value = normalized(value) else { return nil }
+        let fileName = (value as NSString).lastPathComponent
+        return (fileName as NSString).deletingPathExtension.lowercased()
+    }
+
+    private static func dateDistance(_ lhs: Date?, _ rhs: Date?) -> TimeInterval {
+        guard let lhs, let rhs else { return .greatestFiniteMagnitude }
+        return abs(lhs.timeIntervalSince(rhs))
+    }
+}
+
+private enum TemporaryFileStore {
+    static func write(data: Data, suggestedFileName: String) throws -> URL {
+        let safeName = sanitizedFileName(suggestedFileName)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let fileURL = url.appendingPathComponent(safeName)
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
+    }
+
+    private static func sanitizedFileName(_ value: String) -> String {
+        let fallback = "amazon-photo-\(UUID().uuidString).jpg"
+        let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return fallback }
+        return candidate.replacingOccurrences(of: "/", with: "_")
+    }
+}
+
+private extension DateFormatter {
+    static func libraryDate(_ date: Date?) -> String {
+        guard let date else { return "Unknown date" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
