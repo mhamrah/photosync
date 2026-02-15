@@ -42,6 +42,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var selection: AppSection? = .summary
+    @State private var hasStartedInitialAuthorizationFlow = false
 
     var body: some View {
         ZStack {
@@ -85,6 +86,9 @@ struct ContentView: View {
             .padding()
         }
         .task {
+            guard !hasStartedInitialAuthorizationFlow else { return }
+            hasStartedInitialAuthorizationFlow = true
+            await prepareWindowForAuthorizationPrompt()
             await photoAuthorizationController.requestAuthorizationIfNeeded(trigger: .automatic)
             handleAuthorizationChange(photoAuthorizationController.state)
             comparisonViewModel.refresh()
@@ -118,6 +122,64 @@ struct ContentView: View {
         case .notDetermined, .requesting:
             break
         }
+    }
+
+    private func prepareWindowForAuthorizationPrompt() async {
+        for _ in 0..<12 {
+            let windowReady = await MainActor.run { ensurePrimaryWindowIsVisible() }
+            if windowReady {
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+    }
+
+    @MainActor
+    private func ensurePrimaryWindowIsVisible() -> Bool {
+        guard let window = primaryWindow,
+              let visibleFrame = targetVisibleScreenFrame(for: window)
+        else {
+            return false
+        }
+
+        let frame = window.frame
+        let windowCenter = CGPoint(x: frame.midX, y: frame.midY)
+        if !visibleFrame.contains(windowCenter) {
+            let width = min(frame.width, max(320, visibleFrame.width - 32))
+            let height = min(frame.height, max(320, visibleFrame.height - 32))
+            let centeredFrame = CGRect(
+                x: visibleFrame.midX - (width / 2),
+                y: visibleFrame.midY - (height / 2),
+                width: width,
+                height: height
+            ).integral
+            window.setFrame(centeredFrame, display: true)
+        }
+
+        window.makeKeyAndOrderFront(nil)
+        return true
+    }
+
+    @MainActor
+    private var primaryWindow: NSWindow? {
+        NSApplication.shared.keyWindow
+            ?? NSApplication.shared.mainWindow
+            ?? NSApplication.shared.windows.first(where: { $0.isVisible })
+            ?? NSApplication.shared.windows.first
+    }
+
+    @MainActor
+    private func targetVisibleScreenFrame(for window: NSWindow) -> CGRect? {
+        if let windowScreen = window.screen {
+            return windowScreen.visibleFrame
+        }
+
+        if let mainScreen = NSScreen.main {
+            return mainScreen.visibleFrame
+        }
+
+        return NSScreen.screens.first?.visibleFrame
     }
 }
 

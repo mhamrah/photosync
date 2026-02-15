@@ -13,6 +13,49 @@ enum AmazonPhotosCredentialStoreError: LocalizedError {
 }
 
 final class AmazonPhotosCredentialStore {
+    private struct StoredCredentials: Codable {
+        let sessionID: String
+        let ubidCookieKey: String
+        let ubidCookieValue: String
+        let atCookieKey: String
+        let atCookieValue: String
+
+        init(credentials: AmazonPhotosCredentials) {
+            sessionID = credentials.sessionID
+            ubidCookieKey = credentials.ubidCookieKey
+            ubidCookieValue = credentials.ubidCookieValue
+            atCookieKey = credentials.atCookieKey
+            atCookieValue = credentials.atCookieValue
+        }
+
+        var credentials: AmazonPhotosCredentials {
+            AmazonPhotosCredentials(
+                sessionID: sessionID,
+                ubidCookieKey: ubidCookieKey,
+                ubidCookieValue: ubidCookieValue,
+                atCookieKey: atCookieKey,
+                atCookieValue: atCookieValue
+            )
+        }
+    }
+
+    private enum Accounts {
+        static let combinedCredentials = "credentials-v1"
+        static let legacySessionID = "session-id"
+        static let legacyUbidCookieKey = "ubid-cookie-key"
+        static let legacyUbidCookieValue = "ubid-cookie-value"
+        static let legacyAtCookieKey = "at-cookie-key"
+        static let legacyAtCookieValue = "at-cookie-value"
+
+        static let legacy: [String] = [
+            legacySessionID,
+            legacyUbidCookieKey,
+            legacyUbidCookieValue,
+            legacyAtCookieKey,
+            legacyAtCookieValue,
+        ]
+    }
+
     private let service: String
 
     init(service: String = "com.mhamrah.photosynccompanion.amazonphotos") {
@@ -20,15 +63,20 @@ final class AmazonPhotosCredentialStore {
     }
 
     func loadCredentials() throws -> AmazonPhotosCredentials? {
-        guard
-            let sessionID = try read(account: "session-id"),
-            let ubidCookieKey = try read(account: "ubid-cookie-key"),
-            let ubidCookieValue = try read(account: "ubid-cookie-value"),
-            let atCookieKey = try read(account: "at-cookie-key"),
-            let atCookieValue = try read(account: "at-cookie-value")
-        else {
-            return nil
+        if let combinedData = try readData(account: Accounts.combinedCredentials),
+           let decoded = try? JSONDecoder().decode(StoredCredentials.self, from: combinedData) {
+            let credentials = decoded.credentials
+            return credentials.isComplete ? credentials : nil
         }
+
+        let legacyEntries = try readAllServiceEntries()
+        guard
+            let sessionID = legacyEntries[Accounts.legacySessionID],
+            let ubidCookieKey = legacyEntries[Accounts.legacyUbidCookieKey],
+            let ubidCookieValue = legacyEntries[Accounts.legacyUbidCookieValue],
+            let atCookieKey = legacyEntries[Accounts.legacyAtCookieKey],
+            let atCookieValue = legacyEntries[Accounts.legacyAtCookieValue]
+        else { return nil }
 
         let credentials = AmazonPhotosCredentials(
             sessionID: sessionID,
@@ -41,22 +89,18 @@ final class AmazonPhotosCredentialStore {
     }
 
     func save(credentials: AmazonPhotosCredentials) throws {
-        try upsert(value: credentials.sessionID, account: "session-id")
-        try upsert(value: credentials.ubidCookieKey, account: "ubid-cookie-key")
-        try upsert(value: credentials.ubidCookieValue, account: "ubid-cookie-value")
-        try upsert(value: credentials.atCookieKey, account: "at-cookie-key")
-        try upsert(value: credentials.atCookieValue, account: "at-cookie-value")
+        let stored = StoredCredentials(credentials: credentials)
+        let data = try JSONEncoder().encode(stored)
+        try upsert(data: data, account: Accounts.combinedCredentials)
+        try? clearLegacyEntries()
     }
 
     func clear() throws {
-        try delete(account: "session-id")
-        try delete(account: "ubid-cookie-key")
-        try delete(account: "ubid-cookie-value")
-        try delete(account: "at-cookie-key")
-        try delete(account: "at-cookie-value")
+        try delete(account: Accounts.combinedCredentials)
+        try clearLegacyEntries()
     }
 
-    private func read(account: String) throws -> String? {
+    private func readData(account: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -70,11 +114,7 @@ final class AmazonPhotosCredentialStore {
 
         switch status {
         case errSecSuccess:
-            guard
-                let data = result as? Data,
-                let value = String(data: data, encoding: .utf8)
-            else { return nil }
-            return value
+            return result as? Data
         case errSecItemNotFound:
             return nil
         default:
@@ -82,8 +122,44 @@ final class AmazonPhotosCredentialStore {
         }
     }
 
-    private func upsert(value: String, account: String) throws {
-        let data = Data(value.utf8)
+    private func readAllServiceEntries() throws -> [String: String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            var entries: [String: String] = [:]
+            if let items = result as? [[String: Any]] {
+                for item in items {
+                    guard
+                        let account = item[kSecAttrAccount as String] as? String,
+                        let data = item[kSecValueData as String] as? Data,
+                        let value = String(data: data, encoding: .utf8)
+                    else { continue }
+                    entries[account] = value
+                }
+            } else if let item = result as? [String: Any],
+                      let account = item[kSecAttrAccount as String] as? String,
+                      let data = item[kSecValueData as String] as? Data,
+                      let value = String(data: data, encoding: .utf8) {
+                entries[account] = value
+            }
+            return entries
+        case errSecItemNotFound:
+            return [:]
+        default:
+            throw AmazonPhotosCredentialStoreError.keychain(status)
+        }
+    }
+
+    private func upsert(data: Data, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -104,6 +180,12 @@ final class AmazonPhotosCredentialStore {
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
             throw AmazonPhotosCredentialStoreError.keychain(addStatus)
+        }
+    }
+
+    private func clearLegacyEntries() throws {
+        for account in Accounts.legacy {
+            try delete(account: account)
         }
     }
 
