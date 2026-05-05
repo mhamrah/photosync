@@ -90,6 +90,7 @@ final class AmazonPhotosIndexer: ObservableObject {
 
             var processed = 0
             var pagesFetched = 0
+            let startedAt = Date()
 
             while true {
                 try Task.checkCancellation()
@@ -112,6 +113,15 @@ final class AmazonPhotosIndexer: ObservableObject {
                     self.state = .indexing(.init(processed: min(processed, estimatedTotal), total: max(estimatedTotal, processed)))
                 }
 
+                try await updateCheckpoint(
+                    cursor: String(currentOffset),
+                    processed: processed,
+                    total: max(estimatedTotal, processed),
+                    startedAt: startedAt,
+                    completedAt: nil,
+                    errorMessage: nil
+                )
+
                 let reachedPageCap = pageCap.map { pagesFetched >= $0 } ?? false
                 let reachedEndOfData = nodes.count < limit
                 let hasReliableReportedTotal = reportedCount > limit
@@ -128,6 +138,15 @@ final class AmazonPhotosIndexer: ObservableObject {
                 processed: processed,
                 total: processed,
                 completedAt: Date()
+            )
+
+            try await updateCheckpoint(
+                cursor: nil,
+                processed: completion.processed,
+                total: completion.total,
+                startedAt: startedAt,
+                completedAt: completion.completedAt,
+                errorMessage: nil
             )
 
             await MainActor.run {
@@ -157,6 +176,7 @@ final class AmazonPhotosIndexer: ObservableObject {
         backgroundContext.automaticallyMergesChangesFromParent = false
 
         try await backgroundContext.perform {
+            let catalogRepository = CatalogRepository(context: backgroundContext)
             let nodeIDs = nodes.map(\.id)
 
             let request: NSFetchRequest<AmazonAsset> = AmazonAsset.fetchRequest()
@@ -182,8 +202,39 @@ final class AmazonPhotosIndexer: ObservableObject {
                 asset.parentsRaw = node.parents?.joined(separator: ",")
                 asset.rawJSON = try? JSONEncoder.amazonPhotosEncoder().encode(node)
                 asset.indexedAt = Date()
+                try catalogRepository.upsertAmazonAssetAnalysis(from: asset)
                 existingByID[node.id] = asset
             }
+
+            if backgroundContext.hasChanges {
+                try backgroundContext.save()
+            }
+        }
+    }
+
+    private func updateCheckpoint(
+        cursor: String?,
+        processed: Int,
+        total: Int,
+        startedAt: Date,
+        completedAt: Date?,
+        errorMessage: String?
+    ) async throws {
+        let backgroundContext = persistenceController.container.newBackgroundContext()
+        backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+        backgroundContext.automaticallyMergesChangesFromParent = false
+
+        try await backgroundContext.perform {
+            let catalogRepository = CatalogRepository(context: backgroundContext)
+            try catalogRepository.upsertCheckpoint(
+                source: .amazonPhotos,
+                cursor: cursor,
+                processedCount: Int64(processed),
+                totalCount: Int64(total),
+                startedAt: startedAt,
+                completedAt: completedAt,
+                errorMessage: errorMessage
+            )
 
             if backgroundContext.hasChanges {
                 try backgroundContext.save()

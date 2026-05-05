@@ -61,8 +61,150 @@
             </constraint>
         </uniquenessConstraints>
     </entity>
+    <entity name="AssetAnalysis" representedClassName="AssetAnalysis" syncable="YES" codeGenerationType="none">
+        <attribute name="assetKey" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="normalizedFilename" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="captureDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="pixelWidth" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="pixelHeight" optional="NO" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="duration" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="fileSizeBytes" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="mediaType" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="isFavorite" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="isHidden" optional="NO" attributeType="Boolean" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="contentHash" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="md5" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="perceptualHash" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="featureVector" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES" usesScalarValueType="NO"/>
+        <attribute name="featureVersion" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="ocrText" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="labelsRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="faceClusterIDsRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="ownerId" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="parentsRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="rawJSON" optional="YES" attributeType="Binary"/>
+        <attribute name="indexedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="analysisUpdatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="analysisStatusRaw" optional="NO" attributeType="Integer 16" defaultValueString="0" indexed="YES" usesScalarValueType="YES"/>
+        <attribute name="analysisErrorMessage" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="analysisAttemptCount" optional="NO" attributeType="Integer 16" defaultValueString="0" indexed="YES" usesScalarValueType="YES"/>
+        <attribute name="analysisNextRetryAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="thumbnailCachedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="assetKey"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="FaceObservation" representedClassName="FaceObservation" syncable="YES" codeGenerationType="none">
+        <attribute name="observationIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="assetKey" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="faceIndex" optional="NO" attributeType="Integer 16" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="boundingBoxX" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="boundingBoxY" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="boundingBoxWidth" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="boundingBoxHeight" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="clusterIdentifier" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="observationIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="PersonCluster" representedClassName="PersonCluster" syncable="YES" codeGenerationType="none">
+        <attribute name="clusterIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="displayName" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="memberObservationIDsRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="representativeAssetKey" optional="YES" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="clusterIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="CrossLibraryMatch" representedClassName="CrossLibraryMatch" syncable="YES" codeGenerationType="none">
+        <attribute name="matchIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="localIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="amazonNodeId" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="kindRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="confidence" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="evidenceJSON" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES" usesScalarValueType="NO"/>
+        <attribute name="decidedActionRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="matchIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="DuplicateCluster" representedClassName="DuplicateCluster" syncable="YES" codeGenerationType="none">
+        <attribute name="clusterIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="kindRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="memberIdentifiersRaw" optional="NO" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="keeperIdentifier" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="confidence" optional="NO" attributeType="Double" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="evidenceJSON" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="clusterIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="SyncPlanItem" representedClassName="SyncPlanItem" syncable="YES" codeGenerationType="none">
+        <attribute name="itemIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="actionKindRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="statusRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="primarySourceRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="primaryIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="relatedSourceRaw" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="relatedIdentifier" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="reason" optional="NO" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="errorMessage" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="completedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="itemIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
+    <entity name="IngestCheckpoint" representedClassName="IngestCheckpoint" syncable="YES" codeGenerationType="none">
+        <attribute name="checkpointIdentifier" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="sourceRaw" optional="NO" attributeType="String" indexed="YES" usesScalarValueType="NO"/>
+        <attribute name="cursor" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="lastStartedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastCompletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="lastErrorMessage" optional="YES" attributeType="String" usesScalarValueType="NO"/>
+        <attribute name="processedCount" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="totalCount" optional="NO" attributeType="Integer 64" defaultValueString="0" usesScalarValueType="YES"/>
+        <uniquenessConstraints>
+            <constraint>
+                <constraintValue key="constraintValue" stringValue="checkpointIdentifier"/>
+            </constraint>
+        </uniquenessConstraints>
+    </entity>
     <elements>
         <element name="LocalAsset" positionX="160" positionY="160" width="128" height="345"/>
         <element name="AmazonAsset" positionX="430" positionY="160" width="128" height="255"/>
+        <element name="AssetAnalysis" positionX="700" positionY="160" width="128" height="345"/>
+        <element name="FaceObservation" positionX="970" positionY="160" width="128" height="240"/>
+        <element name="PersonCluster" positionX="1240" positionY="160" width="128" height="150"/>
+        <element name="CrossLibraryMatch" positionX="1510" positionY="160" width="128" height="180"/>
+        <element name="DuplicateCluster" positionX="1780" positionY="160" width="128" height="180"/>
+        <element name="SyncPlanItem" positionX="2050" positionY="160" width="128" height="210"/>
+        <element name="IngestCheckpoint" positionX="2320" positionY="160" width="128" height="165"/>
     </elements>
 </model>

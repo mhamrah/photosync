@@ -87,6 +87,7 @@ final class PhotoLibraryIndexer: ObservableObject {
             backgroundContext.automaticallyMergesChangesFromParent = false
 
             var processed = 0
+            let startedAt = Date()
 
             while processed < total {
                 try Task.checkCancellation()
@@ -98,6 +99,7 @@ final class PhotoLibraryIndexer: ObservableObject {
                 let identifiers = assets.map(\.localIdentifier)
 
                 try await backgroundContext.perform {
+                    let catalogRepository = CatalogRepository(context: backgroundContext)
                     let fetchRequest: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
                     fetchRequest.predicate = NSPredicate(format: "localIdentifier IN %@", identifiers)
                     fetchRequest.fetchBatchSize = self.batchSize
@@ -108,8 +110,19 @@ final class PhotoLibraryIndexer: ObservableObject {
                     for asset in assets {
                         let localAsset = existingByIdentifier[asset.localIdentifier] ?? LocalAsset(context: backgroundContext)
                         self.update(localAsset, with: asset)
+                        try catalogRepository.upsertLocalAssetAnalysis(from: localAsset)
                         existingByIdentifier[asset.localIdentifier] = localAsset
                     }
+
+                    try catalogRepository.upsertCheckpoint(
+                        source: .applePhotos,
+                        cursor: identifiers.last,
+                        processedCount: Int64(rangeEnd),
+                        totalCount: Int64(total),
+                        startedAt: startedAt,
+                        completedAt: nil,
+                        errorMessage: nil
+                    )
 
                     if backgroundContext.hasChanges {
                         try backgroundContext.save()
@@ -121,6 +134,23 @@ final class PhotoLibraryIndexer: ObservableObject {
 
                 await MainActor.run {
                     self.state = .indexing(.init(processed: processed, total: max(total, processed)))
+                }
+            }
+
+            try await backgroundContext.perform {
+                let catalogRepository = CatalogRepository(context: backgroundContext)
+                try catalogRepository.upsertCheckpoint(
+                    source: .applePhotos,
+                    cursor: nil,
+                    processedCount: Int64(processed),
+                    totalCount: Int64(max(total, processed)),
+                    startedAt: startedAt,
+                    completedAt: Date(),
+                    errorMessage: nil
+                )
+
+                if backgroundContext.hasChanges {
+                    try backgroundContext.save()
                 }
             }
 
@@ -966,10 +996,46 @@ final class ExactDuplicateIndexer: ObservableObject {
             request.predicate = Self.makeCandidatePredicate(force: force, now: now, maxRetryAttempts: maxRetryAttempts)
 
             let assets = try backgroundContext.fetch(request)
-            return assets.map {
+            var candidates = assets.map {
                 Candidate(localIdentifier: $0.localIdentifier, analysisAttemptCount: $0.analysisAttemptCount)
             }
+
+            if !force {
+                let existingIdentifiers = Set(candidates.map(\.localIdentifier))
+                let analysisGaps = try self.fetchAppleAnalysisGapIdentifiers(in: backgroundContext, batchSize: batchSize)
+                    .filter { !existingIdentifiers.contains($0) }
+
+                if !analysisGaps.isEmpty {
+                    let gapRequest: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
+                    gapRequest.fetchBatchSize = batchSize
+                    gapRequest.predicate = NSPredicate(format: "localIdentifier IN %@", analysisGaps)
+                    let gapAssets = try backgroundContext.fetch(gapRequest)
+                    candidates.append(
+                        contentsOf: gapAssets.map {
+                            Candidate(localIdentifier: $0.localIdentifier, analysisAttemptCount: $0.analysisAttemptCount)
+                        }
+                    )
+                }
+            }
+
+            return candidates
         }
+    }
+
+    private nonisolated func fetchAppleAnalysisGapIdentifiers(in context: NSManagedObjectContext, batchSize: Int) throws -> [String] {
+        let request: NSFetchRequest<AssetAnalysis> = AssetAnalysis.fetchRequest()
+        request.fetchBatchSize = batchSize
+        request.predicate = NSPredicate(
+            format: """
+            sourceRaw == %@ AND (
+                labelsRaw == nil OR labelsRaw == '' OR
+                ocrText == nil OR
+                faceClusterIDsRaw == nil
+            )
+            """,
+            AssetSource.applePhotos.rawValue
+        )
+        return try context.fetch(request).map(\.sourceIdentifier)
     }
 
     nonisolated private static func makeCandidatePredicate(force: Bool, now: Date, maxRetryAttempts: Int16) -> NSPredicate {
@@ -1024,6 +1090,7 @@ final class ExactDuplicateIndexer: ObservableObject {
             let normalizedImage = try await imageProvider.fetchNormalizedCGImage(localIdentifier: candidate.localIdentifier)
             let perceptualHash = try Self.computePerceptualHashHex(from: normalizedImage)
             let feature = try Self.computeFeatureVector(from: normalizedImage)
+            let visionSummary = try Self.computeVisionSummary(from: normalizedImage)
 
             return AnalysisResult(
                 localIdentifier: candidate.localIdentifier,
@@ -1031,6 +1098,10 @@ final class ExactDuplicateIndexer: ObservableObject {
                 perceptualHash: perceptualHash,
                 featureVector: feature.data,
                 featureVersion: feature.version,
+                ocrText: visionSummary.ocrText,
+                labelsRaw: visionSummary.labelsRaw,
+                faceClusterIDsRaw: visionSummary.faceClusterIDsRaw,
+                faceObservations: visionSummary.faceObservations,
                 status: .success,
                 errorMessage: nil,
                 nextRetryAt: nil
@@ -1044,6 +1115,10 @@ final class ExactDuplicateIndexer: ObservableObject {
                 perceptualHash: nil,
                 featureVector: nil,
                 featureVersion: nil,
+                ocrText: nil,
+                labelsRaw: nil,
+                faceClusterIDsRaw: nil,
+                faceObservations: [],
                 status: .failed,
                 errorMessage: error.localizedDescription,
                 nextRetryAt: nextRetryAt
@@ -1062,6 +1137,7 @@ final class ExactDuplicateIndexer: ObservableObject {
         let resultByIdentifier = Dictionary(uniqueKeysWithValues: results.map { ($0.localIdentifier, $0) })
 
         try await backgroundContext.perform {
+            let catalogRepository = CatalogRepository(context: backgroundContext)
             let request: NSFetchRequest<LocalAsset> = LocalAsset.fetchRequest()
             request.predicate = NSPredicate(format: "localIdentifier IN %@", identifiers)
             request.fetchBatchSize = results.count
@@ -1094,6 +1170,18 @@ final class ExactDuplicateIndexer: ObservableObject {
                 if result.status == .success {
                     asset.analysisErrorMessage = nil
                     asset.analysisNextRetryAt = nil
+                }
+
+                let analysis = try catalogRepository.upsertLocalAssetAnalysis(from: asset)
+                if result.status == .success {
+                    analysis.ocrText = result.ocrText
+                    analysis.labelsRaw = result.labelsRaw
+                    analysis.faceClusterIDsRaw = result.faceClusterIDsRaw
+                    try catalogRepository.upsertFaceObservations(
+                        source: .applePhotos,
+                        sourceIdentifier: asset.localIdentifier,
+                        observations: result.faceObservations
+                    )
                 }
             }
 
@@ -1223,6 +1311,60 @@ final class ExactDuplicateIndexer: ObservableObject {
         return (data: data, version: "vision-featureprint-r\(request.revision)")
     }
 
+    private static func computeVisionSummary(from image: CGImage) throws -> VisionSummary {
+        let labelsRequest = VNClassifyImageRequest()
+        let textRequest = VNRecognizeTextRequest()
+        textRequest.recognitionLevel = .accurate
+        textRequest.usesLanguageCorrection = true
+        let faceRequest = VNDetectFaceRectanglesRequest()
+
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try handler.perform([labelsRequest, textRequest, faceRequest])
+
+        let labels = (labelsRequest.results ?? [])
+            .filter { $0.confidence >= 0.2 }
+            .prefix(12)
+            .map { observation in
+                "\(observation.identifier)|\(String(format: "%.3f", observation.confidence))"
+            }
+            .joined(separator: "\n")
+
+        let ocrText = (textRequest.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let faceObservations = (faceRequest.results ?? [])
+            .enumerated()
+            .map { index, observation in
+                let box = observation.boundingBox
+                return CatalogFaceObservationInput(
+                    faceIndex: Int16(index + 1),
+                    boundingBoxX: Double(box.origin.x),
+                    boundingBoxY: Double(box.origin.y),
+                    boundingBoxWidth: Double(box.width),
+                    boundingBoxHeight: Double(box.height)
+                )
+            }
+
+        let faces = faceObservations
+            .map { observation in
+                "face-\(observation.faceIndex):\(rounded(observation.boundingBoxX + (observation.boundingBoxWidth / 2))),\(rounded(observation.boundingBoxY + (observation.boundingBoxHeight / 2))),\(rounded(observation.boundingBoxWidth)),\(rounded(observation.boundingBoxHeight))"
+            }
+            .joined(separator: "\n")
+
+        return VisionSummary(
+            ocrText: ocrText.isEmpty ? nil : ocrText,
+            labelsRaw: labels.isEmpty ? nil : labels,
+            faceClusterIDsRaw: faces.isEmpty ? nil : faces,
+            faceObservations: faceObservations
+        )
+    }
+
+    private static func rounded(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
     private static func retryDate(attempt: Int) -> Date {
         let seconds = min(pow(2, Double(attempt)) * 15, 3600)
         return Date().addingTimeInterval(seconds)
@@ -1239,9 +1381,20 @@ final class ExactDuplicateIndexer: ObservableObject {
         let perceptualHash: String?
         let featureVector: Data?
         let featureVersion: String?
+        let ocrText: String?
+        let labelsRaw: String?
+        let faceClusterIDsRaw: String?
+        let faceObservations: [CatalogFaceObservationInput]
         let status: LocalAsset.AnalysisStatus
         let errorMessage: String?
         let nextRetryAt: Date?
+    }
+
+    private struct VisionSummary: Sendable {
+        let ocrText: String?
+        let labelsRaw: String?
+        let faceClusterIDsRaw: String?
+        let faceObservations: [CatalogFaceObservationInput]
     }
 
     private enum HashingError: LocalizedError {
